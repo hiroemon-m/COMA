@@ -186,6 +186,9 @@ def execute_data() -> None:
 
         for t in range(TOTAL_TIME - GENERATE_TIME):
             gc.collect()
+            #field.state()隣接行列、属性値を返す
+            #neighbor_state, feat = field.state()
+            #->部分観測(自分のエッジの接続、属性値の情報)にする
             neighbor_state, feat = field.state()
             #print("stae",neighbor_state)
             #print("feat",feat)

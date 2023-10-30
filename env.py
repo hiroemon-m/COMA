@@ -14,18 +14,20 @@ device = config.select_device
 
 
 class Env:
-    def __init__(self, edges, feature, temper, alpha, beta) -> None:
+    def __init__(self, edges, feature, temper) -> None:
         self.edges = edges
         self.feature = feature.to(device)
         self.temper = temper
-        self.alpha = alpha
-        self.beta = beta
+        #self.alpha = alpha
+        self.alpha = 1
+        #self.beta = beta
+        self.beta = 0.1
         # 特徴量の正規化
         norm = self.feature.norm(dim=1)[:, None] + 1e-8
         self.feature = self.feature.div_(norm)
         self.feature_t = self.feature.t()
 
-        return
+
 
     def reset(self, edges, attributes):
         self.edges = edges
@@ -34,28 +36,34 @@ class Env:
         norm = self.feature.norm(dim=1)[:, None] + 1e-8
         self.feature = self.feature.div(norm)
         self.feature_t = self.feature.t()
+
+        return self.edges,self.feature
     #一つ進める
-    def step(self, actions):
-        next_mat = actions.bernoulli()
+
+    def step(self,feature,action):
+        next_mat = action
         self.edges = next_mat
-        dot_product = torch.mm(self.feature, self.feature_t)
-        reward = next_mat.mul(dot_product).mul(self.alpha)
-        costs = next_mat.mul(self.beta)
-        reward = reward.sub(costs)
-        return reward.sum()
-
-
-    #特徴量の更新
-    def update_attributes(self, attributes):
-        self.feature = attributes
-        # 特徴量の正規化
-        norm = self.feature.norm(dim=1)[:, None] + 1e-8
-        self.feature = self.feature.div(norm)
+        next_feature = feature
+        self.feature = next_feature
+        # 特徴量の正規化vactor.pyでやってる
+        #norm = self.feature.norm(dim=1)[:, None] + 1e-8
+        #self.feature = self.feature.div(norm)
 
         self.feature_t = self.feature.t()
+        dot_product = torch.mm(self.feature, self.feature_t)
+        reward = next_mat.mul(dot_product).mul(self.alpha)
+  
+        costs = next_mat.mul(self.beta)
+  
+        reward = reward.sub(costs)
+   
+        return reward
+
+
 
     #隣接行列を返す
     def state(self):
         #neighbor_mat = torch.mul(self.edges, self.edges)
         neighbor_mat = torch.mul(self.edges, self.edges)
+
         return neighbor_mat, self.feature
