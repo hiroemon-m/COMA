@@ -33,6 +33,33 @@ class Actor(nn.Module):
         )
         
 
+    def calc_ration(self,attributes, edges,persona):
+
+        calc_policy = torch.empty(4,32)
+        edges = (edges > 0).float().to(device)
+        for i in range(len(persona)):
+
+            tmp_tensor = self.W[i] * torch.matmul(edges, attributes)
+            r = self.r[i]
+            r = r + 1e-8
+            feat = r * attributes + tmp_tensor * (1 - r)
+            feat_prob = torch.tanh(feat)
+            x = torch.mm(feat, feat.t())
+            x = x.div(self.T[i]).exp().mul(self.e[i])
+            min_values = torch.min(x, dim=0).values
+            max_values = torch.max(x, dim=0).values
+            x = (x - min_values) / ((max_values - min_values) + 1e-4)+1e-4
+            x = torch.nan_to_num(x)
+            x = torch.tanh(x)
+           
+            calc_policy[i] = torch.sum(x,dim=1)
+
+         
+        return calc_policy
+
+  
+
+
     def forward(
         self,attributes, edges
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

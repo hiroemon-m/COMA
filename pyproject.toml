@@ -71,6 +71,7 @@ mypy = "^1.0.1"
 pep8-naming = "^0.13.3"
 pyproject-flake8 = "^6.0.0.post1"
 tdqm = "^0.0.1"
+ipykernel = "^6.26.0"
 
 [build-system]
 build-backend = "poetry.core.masonry.api"
