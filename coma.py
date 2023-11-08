@@ -99,6 +99,7 @@ class COMA:
         critic_optimizer = self.critic_optimizer
 
         actions, observation_edges,observation_features, pi, reward= self.memory.get()
+        print("102",reward.shape)
         reward = torch.sum(reward,dim=2)
 
         #------------疎行列を作る--------------
@@ -498,7 +499,7 @@ def execute_data():
                 load_data.feature[LEARNED_TIME].clone()
                 )
         episode_reward = 0
-        episodes_reward = []
+        #episodes_reward = []
     
         for i in range(story_count):
             #print("start{}".format(i))
@@ -507,7 +508,7 @@ def execute_data():
             feat,action = agents.get_actions(edges,feature)
             reward = obs.step(feat,action)
 
-
+            print("obs.step",reward.shape)
             #reward tensor(-39.2147, grad_fn=<SumBackward0>)
             agents.memory.reward.append(reward.tolist())
 
@@ -528,6 +529,7 @@ def execute_data():
 
         if episode % 16 == 0:
             #print(reward)
+            print("502",torch.tensor(episodes_reward).shape)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-16:]) / 16}")
 
     calc_log = np.zeros((10, 5))

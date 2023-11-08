@@ -51,12 +51,13 @@ class Env:
 
         self.feature_t = self.feature.t()
         dot_product = torch.mm(self.feature, self.feature_t)
-        reward = next_mat.mul(dot_product).mul(self.alpha)
+        sim = torch.mul(self.edges,dot_product)
+        
+        costs = torch.tensor(self.edges)
+        costs = torch.add(costs, 0.001)
+        reward = torch.sub(sim, costs)
   
-        costs = next_mat.mul(self.beta)
-  
-        reward = reward.sub(costs)
-   
+
         return reward
 
 
