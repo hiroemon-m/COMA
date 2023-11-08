@@ -24,14 +24,14 @@ from critic import Critic
 device = config.select_device
 
 class COMA:
-    def __init__(self, agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w):
+    def __init__(self, agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik):
         self.agent_num = agent_num
         self.action_dim = action_dim
         self.input_size = 81580
         self.gamma = gamma
         self.target_update_steps = target_update_steps
         self.memory = Memory(agent_num, action_dim)
-        self.actor = Actor(T,e,r,w)
+        self.actor = Actor(T,e,r,w,rik)
 
         self.critic = Critic(input_size, action_dim)
         #crit
@@ -64,7 +64,7 @@ class COMA:
         actor_optimizer = self.actors_optimizer
         critic_optimizer = self.critic_optimizer
         actions, observation_edges,observation_features, pi, reward= self.memory.get()
-        reward = torch.sum(reward,dim=2)
+        #reward = torch.sum(reward,dim=2)
         observation_edges_flatten = torch.tensor(np.array(observation_edges)).view(4,-1)
         observation_features_flatten = torch.tensor(np.array(observation_features)).view(4,-1)
         actions_flatten = torch.tensor(actions).view(4,-1)#4x1024
@@ -185,7 +185,7 @@ def execute_data():
     persona_num = 4
     LEARNED_TIME = 0
     GENERATE_TIME = 5
-    TOTAL_TIME = 10
+    TOTAL_TIME = 9
     load_data = init_real_data()
     agent_num = len(load_data.adj[LEARNED_TIME])
     input_size = 81580
@@ -196,14 +196,14 @@ def execute_data():
     target_update_steps = 8
     alpha = torch.from_numpy(
         np.array(
-            [1.0 for i in range(data_size)],
+            [1.0 for i in range(persona_num)],
             dtype=np.float32,
         ),
     ).to(device)
 
     beta = torch.from_numpy(
         np.array(
-            [1.0 for i in range(data_size)],
+            [1.0 for i in range(persona_num)],
             dtype=np.float32,
         ),
     ).to(device)
@@ -235,7 +235,7 @@ def execute_data():
     N = len(alpha)
 
     # E-step
-    actor = Actor(T,e,r,w)
+    actor = Actor(T,e,r,w,persona)
 #personaはじめは均等
 
     policy_ration = torch.empty(GENERATE_TIME,len(persona),agent_num)
@@ -254,10 +254,10 @@ def execute_data():
 
 
     top = torch.sum(policy_ration,dim = 0)
-    print(top)
+
     #分母 すべての時間,全てのpolicy_ration計算
     bottom = torch.sum(top,dim=0)
-    print(bottom)
+ 
     #for n in range(len(persona)):
     ration = torch.div(top,bottom)
 
@@ -265,17 +265,18 @@ def execute_data():
         for k in range(len(persona)):
             rik[i,k] = ration[k,i]
       
-    print(rik)
 
 #M-step
-    agents = COMA(agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w)
+    agents = COMA(agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik)
 
     obs = Env(
+        agent_num = agent_num,
         edges=load_data.adj[LEARNED_TIME].clone(),
         feature=load_data.feature[LEARNED_TIME].clone(),
         temper=T,
         alpha=alpha,
         beta=beta,
+        persona=rik
     )
 
 
@@ -286,7 +287,7 @@ def execute_data():
     #n_episodes = 10000
     episodes = 64
     story_count = 4
- 
+    
     for episode in range(episodes):
 
    
@@ -295,7 +296,7 @@ def execute_data():
                 load_data.feature[LEARNED_TIME].clone()
                 )
         episode_reward = 0
-        episodes_reward = []
+        #いらんくねepisodes_reward = []
     
         for i in range(story_count):
             #print("start{}".format(i))
@@ -306,9 +307,9 @@ def execute_data():
 
 
             #reward tensor(-39.2147, grad_fn=<SumBackward0>)
-            agents.memory.reward.append(reward.tolist())
+            agents.memory.reward.append(reward.item())
 
-            episode_reward += reward.sum().item()
+            episode_reward += reward.item()
 
           
             #print("end{}".format(i))

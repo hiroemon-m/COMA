@@ -17,7 +17,7 @@ device = config.select_device
 
 
 class Actor(nn.Module):
-    def __init__(self, T, e, r, w) -> None:
+    def __init__(self, T, e, r, w, persona,) -> None:
         super().__init__()
         self.T = nn.Parameter(
             torch.tensor(T).float().to(device), requires_grad=True
@@ -31,6 +31,7 @@ class Actor(nn.Module):
         self.W = nn.Parameter(
             torch.tensor(w).float().view(-1, 1).to(device), requires_grad=True
         )
+        self.persona = persona
         
 
     def calc_ration(self,attributes, edges,persona):
@@ -69,11 +70,11 @@ class Actor(nn.Module):
         #隣接ノードと自分の特徴量を集約する
         #print(edges.size()) 32x32
         #print(attributes.size())32x2411
-        tmp_tensor = self.W * torch.matmul(edges, attributes)
+        tmp_tensor = torch.mm(self.persona,self.W) * torch.matmul(edges, attributes)
         #tmp_tensor = torch.matmul(edges, attributes)
         
         #feat =  0.5*attributes + 0.5*tmp_tensor
-        r = self.r
+        r = torch.mm(self.persona,self.r)
 
         r = r + 1e-8
         feat = r * attributes + tmp_tensor * (1 - r)
@@ -85,7 +86,7 @@ class Actor(nn.Module):
         # Compute similarity
         x = torch.mm(feat, feat.t())
         #print(x)
-        x = x.div(self.T).exp().mul(self.e)
+        x = x.div(torch.matmul(self.persona,self.T)).exp().mul(torch.matmul(self.persona,self.e))
 
         min_values = torch.min(x, dim=0).values
         # # 各列の最大値 (dim=0 は列方向)

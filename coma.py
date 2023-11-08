@@ -32,7 +32,7 @@ import config
 device = config.select_device
 
 class COMA:
-    def __init__(self, agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w):
+    def __init__(self, agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik):
         self.agent_num = agent_num
         self.action_dim = action_dim
         self.input_size = 81580
@@ -41,7 +41,7 @@ class COMA:
         self.memory = Memory(agent_num, action_dim)
         #actorは方策なので確率が返ってくる
         #self.actors = [Actor(T,e,r,w) for _ in range(agent_num)]
-        self.actor = Actor(T,e,r,w)
+        self.actor = Actor(T,e,r,w,rik)
 
         self.critic = Critic(input_size, action_dim)
         #crit
@@ -53,24 +53,19 @@ class COMA:
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=lr_c)
 
         self.count = 0
+        self.persona = rik
 
     #観察(今いる場所)をもとに次の行動とその確立を求める
     def get_actions(self, edges,feat):
         #観察
         #print("observations",observations)
-
-
         #actions = []
-
-
             #観察の数がエージェントの数分ある
             #観察を元にactorエージェントを作成し確率を得る
             #actorはペルソナの数作る
         prob,feat,_= self.actor.predict(feat,edges)
 
             #一つ前の勾配の削除
-
- 
             #print(self.actors[i])
             #print(dist)
             #エージェントiの方策の配列に追加
