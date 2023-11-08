@@ -238,7 +238,7 @@ def execute_data():
     actor = Actor(T,e,r,w)
 #personaはじめは均等
 
-    policy_ration = torch.empty(GENERATE_TIME,len(persona),agent_num)
+    policy_ration = torch.empty(GENERATE_TIME,len(persona),agent_num,agent_num)
     
     for time in range(GENERATE_TIME):
         polic_prob = actor.calc_ration(
@@ -246,7 +246,31 @@ def execute_data():
                     load_data.adj[time].clone(),
                     persona
                     )
-        policy_ration[time] = polic_prob
+        policy_ration[time] = torch.log(polic_prob)
+    print(policy_ration.shape)
+    for n in range(agent_num):
+        persona_rat = policy_ration[:,:,n,:]
+
+         #分子　全ての時間　 あるペルソナに注目
+        rik = torch.empty(32,len(persona))
+        top = torch.sum(persona_rat,dim = 0)
+        print("top",top.shape)
+        #print(top)
+        #分母 すべての時間,全てのpolicy_ration計算
+        bottom = torch.sum(top,dim=0)
+        print("bot",bottom.shape)
+        #print(bottom)
+        #for n in range(len(persona)):
+        ration = torch.div(top,bottom)
+        print("before",ration)
+
+        for k in range(len(persona)):
+            rik[n,k] = ration[k,n]
+            
+        print(rik)
+
+    print(persona_rat.shape)
+
 
     
     #分子　全ての時間　 あるペルソナに注目
@@ -260,7 +284,7 @@ def execute_data():
     print(bottom)
     #for n in range(len(persona)):
     ration = torch.div(top,bottom)
-
+    print("before",rik)
     for i in range(agent_num):
         for k in range(len(persona)):
             rik[i,k] = ration[k,i]
@@ -276,6 +300,7 @@ def execute_data():
         temper=T,
         alpha=alpha,
         beta=beta,
+        persona=persona
     )
 
 
