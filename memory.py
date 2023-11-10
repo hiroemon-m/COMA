@@ -31,6 +31,7 @@ class Memory:
             #全てのエージェントの行動確率の値
       
         reward = torch.tensor(self.reward)
+        #print(reward.shape)
         #reward (1x4)報酬
         #print(reward)
         return actions, self.observation_edges, self.observation_features, pi, reward

@@ -24,23 +24,26 @@ from critic import Critic
 device = config.select_device
 
 class COMA:
-    def __init__(self, agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik):
+    def __init__(self, agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik,alpha,beta):
         self.agent_num = agent_num
         self.action_dim = action_dim
         self.input_size = 81580
         self.gamma = gamma
+        self.persona = rik
         self.target_update_steps = target_update_steps
         self.memory = Memory(agent_num, action_dim)
         self.actor = Actor(T,e,r,w,rik)
-
         self.critic = Critic(input_size, action_dim)
+        self.alpha = alpha
+        self.beta = beta
         #crit
         self.critic_target = Critic(input_size, action_dim)
         #critic.targetをcritic.state_dictから読み込む
         self.critic_target.load_state_dict(self.critic.state_dict())
         #adamにモデルを登録
-        self.actors_optimizer = [torch.optim.Adam(self.actor.parameters(), lr=lr_a) for i in range(agent_num)]
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=lr_c)
+        #self.actors_optimizer = [torch.optim.Adam(self.actor.parameters(), lr=lr_a) for i in range(agent_num)]
+        self.actors_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_a)
+        self.critic_optimizer = torch.optim.Adam([self.alpha,self.beta], lr=lr_c)
 
         self.count = 0
 
@@ -65,9 +68,10 @@ class COMA:
         critic_optimizer = self.critic_optimizer
         actions, observation_edges,observation_features, pi, reward= self.memory.get()
         #reward = torch.sum(reward,dim=2)
-        observation_edges_flatten = torch.tensor(np.array(observation_edges)).view(4,-1)
-        observation_features_flatten = torch.tensor(np.array(observation_features)).view(4,-1)
-        actions_flatten = torch.tensor(actions).view(4,-1)#4x1024
+        #viewは5->10までの区間を予測したいので5
+        observation_edges_flatten = torch.tensor(np.array(observation_edges)).view(5,-1)
+        observation_features_flatten = torch.tensor(np.array(observation_features)).view(5,-1)
+        actions_flatten = torch.tensor(actions).view(5,-1)#4x1024
      
 
         for i in range(self.agent_num):
@@ -76,12 +80,15 @@ class COMA:
 
             input_critic = self.build_input_critic(i, observation_edges_flatten,observation_edges, observation_features_flatten, observation_features,actions_flatten,actions)
             Q_target = self.critic_target(input_critic)  
-            action_taken = torch.tensor(actions)[:,i,:].type(torch.long).reshape(4, -1)   
+            action_taken = torch.tensor(actions)[:,i,:].type(torch.long).reshape(5, -1)  
+
+            #COMA 反証的ベースライン
             baseline = torch.sum(torch.tensor(pi[i][:]) * Q_target, dim=1)
             max_indices = []
             Q_taken_target = []
-        
-            for j in range(4):
+
+            #5->10を予測するので5
+            for j in range(5):
                 Q_taken_target_num = 0
                 max_indices.append(torch.where(action_taken[j] == 1)[0].tolist())
                 actions_taken = max_indices
@@ -94,19 +101,27 @@ class COMA:
             Q_taken_target = torch.tensor(Q_taken_target)
             #利得関数
             advantage = Q_taken_target - baseline
-            advantage = advantage.reshape(4,1)
+            advantage = advantage.reshape(5,1)
             log_pi = torch.log(torch.mul(torch.tensor(pi[i]),action_taken))
             log_pi = torch.where(log_pi == float("-inf"),0,log_pi)
             actor_loss = - torch.mean(advantage * log_pi)
-            actor_loss.backward(retain_graph = True)
-            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 5)
+            print("loss",actor_loss)
+            actor_optimizer.zero_grad() 
+            actor_loss.backward()
+            
+            #torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 5)
             #パラメータの更新
-            actor_optimizer[i].step()
+            actor_optimizer.step()
+            # パラメータがrequires_grad=Trueになっているか確認
+            for name, param in self.actor.named_parameters():
+                print(name, param.requires_grad)
+           
+            #print("param",self.actor.state_dict())
 
             # train critic
             Q = self.critic(input_critic)
             Q_taken = []
-            for j in range(4):
+            for j in range(5):
                 Q_value = 0
                 for k in range(len(actions_taken[j])):
                 
@@ -115,17 +130,17 @@ class COMA:
             Q_taken=torch.tensor(Q_taken)
 
             r = torch.zeros(len(reward[:, i]))
-          
+            #print(r.shape)
             for t in range(len(reward[:, i])):
                 #ゴールに到達した場合は,次の状態価値関数は0
-                if t == 3:
+                if t == 4:
                     r[t] = reward[:, i][t]
                 #ゴールでない場合は、
                 else:
                     #Reward + γV(st+1)
                     #print(t, Q_taken_target[t + 1])
                     r[t] = reward[:, i][t] + self.gamma * Q_taken_target[t + 1]
-        
+
             #critic_loss = torch.mean((r - Q_taken)**2)
             r = torch.autograd.Variable(r, requires_grad=True)
             Q = torch.autograd.Variable(Q, requires_grad=True)
@@ -133,6 +148,8 @@ class COMA:
             critic_optimizer.zero_grad()
             critic_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 5)
+
+            #print("param",self.critic.state_dict())
             critic_optimizer.step()
 
         if self.count == self.target_update_steps:
@@ -143,6 +160,10 @@ class COMA:
 
         self.memory.clear()
 
+        return self.actor.T,self.actor.e,self.actor.r,self.actor.W,self.alpha,self.beta
+    
+
+
     def build_input_critic(
             self, agent_id, edges_flatten,
             edges,features_flatten,
@@ -151,11 +172,14 @@ class COMA:
 
         batch_size = len(edges)
         ids = (torch.ones(batch_size) * agent_id).view(-1, 1)
-        edges_i = torch.tensor([edges[0][agent_id],edges[1][agent_id],edges[2][agent_id],edges[3][agent_id]])
-        features_i = torch.tensor([features[0][agent_id],features[1][agent_id],features[2][agent_id],features[3][agent_id]])
-        actions_i = torch.empty(1,992)
+        #5->10のデータの整形
+        edges_i = torch.tensor([edges[0][agent_id],edges[1][agent_id],edges[2][agent_id],edges[3][agent_id],edges[4][agent_id]])
+        features_i = torch.tensor([features[0][agent_id],features[1][agent_id],features[2][agent_id],features[3][agent_id],features[4][agent_id]])
+        actions_i = torch.zeros(1,992)
+        
         #iは時間
-        for i in range(4):
+        #5->10までの区間を予測したいので5
+        for i in range(5):
             if agent_id == 0:
                 action_i = torch.tensor(actions[i][agent_id+1:]).view(1,-1)
             elif agent_id == 32:
@@ -166,7 +190,10 @@ class COMA:
             actions_i = torch.cat(tensors=(actions_i,action_i),dim=0)
 
         #空の分消す
-        actions_i = actions_i[:4]
+        #print(actions_i.shape)
+        #print(actions_i[0])
+        actions_i = actions_i[1:]
+        #print(actions_i[0])
         input_critic= torch.cat(tensors=(ids,edges_flatten),dim=1)
         input_critic= torch.cat(tensors=(input_critic,actions_i),dim=1)
         input_critic= torch.cat(tensors=(input_critic,features_flatten),dim=1)
@@ -176,6 +203,44 @@ class COMA:
         return input_critic
     
 
+
+#EMのEstep
+def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
+
+    actor = Actor(T,e,r,w,persona)
+  
+    #personaはじめは均等
+    policy_ration = torch.empty(step,len(persona),agent_num)
+
+    for time in range(step):
+        polic_prob = actor.calc_ration(
+                    load_data.feature[base_time+time].clone(),
+                    load_data.adj[base_time+time].clone(),
+                    persona
+                    )
+
+        policy_ration[time] = polic_prob
+
+
+    #分子　全ての時間　 あるペルソナに注目
+    rik = torch.empty(32,len(persona))
+
+
+    top = torch.sum(policy_ration,dim = 0)
+
+    #分母 すべての時間,全てのpolicy_ration計算
+    bottom = torch.sum(top,dim=0)
+
+    #for n in range(len(persona)):
+    ration = torch.div(top,bottom)
+
+    for i in range(agent_num):
+        for k in range(len(persona)):
+            rik[i,k] = ration[k,i]
+
+    return rik
+
+
 def execute_data():
     ##デバッグ用
     torch.autograd.set_detect_anomaly(True)
@@ -183,9 +248,9 @@ def execute_data():
 
     data_size = 32
     persona_num = 4
-    LEARNED_TIME = 0
+    LEARNED_TIME = 4
     GENERATE_TIME = 5
-    TOTAL_TIME = 9
+    TOTAL_TIME = 10
     load_data = init_real_data()
     agent_num = len(load_data.adj[LEARNED_TIME])
     input_size = 81580
@@ -234,63 +299,57 @@ def execute_data():
 
     N = len(alpha)
 
-    # E-step
-    actor = Actor(T,e,r,w,persona)
-#personaはじめは均等
 
-    policy_ration = torch.empty(GENERATE_TIME,len(persona),agent_num)
-    
-    for time in range(GENERATE_TIME):
-        polic_prob = actor.calc_ration(
-                    load_data.feature[time].clone(),
-                    load_data.adj[time].clone(),
-                    persona
-                    )
-        policy_ration[time] = polic_prob
-
-    
-    #分子　全ての時間　 あるペルソナに注目
-    rik = torch.empty(32,len(persona))
-
-
-    top = torch.sum(policy_ration,dim = 0)
-
-    #分母 すべての時間,全てのpolicy_ration計算
-    bottom = torch.sum(top,dim=0)
- 
-    #for n in range(len(persona)):
-    ration = torch.div(top,bottom)
-
-    for i in range(agent_num):
-        for k in range(len(persona)):
-            rik[i,k] = ration[k,i]
-      
-
-#M-step
-    agents = COMA(agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik)
-
-    obs = Env(
-        agent_num = agent_num,
-        edges=load_data.adj[LEARNED_TIME].clone(),
-        feature=load_data.feature[LEARNED_TIME].clone(),
-        temper=T,
-        alpha=alpha,
-        beta=beta,
-        persona=rik
-    )
-
-
-
-    episode_reward = 0
-    episodes_reward = []
 
     #n_episodes = 10000
     episodes = 64
-    story_count = 4
-    
+    story_count = 5
+
     for episode in range(episodes):
 
-   
+        # E-step
+        mixture_ratio = e_step(
+            agent_num=agent_num,
+            load_data=load_data,
+            T=T,
+            e=e,
+            r=r,
+            w=w,
+            persona=persona,
+            step = GENERATE_TIME,
+            base_time=LEARNED_TIME
+            )
+        #personaはじめは均等
+        if episode == 0:
+                    #環境の設定
+            obs = Env(
+                agent_num = agent_num,
+                edges=load_data.adj[LEARNED_TIME].clone(),
+                feature=load_data.feature[LEARNED_TIME].clone(),
+                temper=T,
+                alpha=alpha,
+                beta=beta,
+                persona=mixture_ratio
+            )
+  
+        episode_reward = 0
+        episodes_reward = []
+
+
+        #M-step
+        
+        agents = COMA(agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,alpha,beta)
+
+
+        episode_reward = 0
+        episodes_reward = []
+
+        #n_episodes = 10000
+        episodes = 64
+        story_count = 5
+    
+
+
         obs.reset(
                 load_data.adj[LEARNED_TIME].clone(),
                 load_data.feature[LEARNED_TIME].clone()
@@ -307,9 +366,9 @@ def execute_data():
 
 
             #reward tensor(-39.2147, grad_fn=<SumBackward0>)
-            agents.memory.reward.append(reward.item())
+            agents.memory.reward.append(reward.tolist())
 
-            episode_reward += reward.item()
+            episode_reward += reward.sum()
 
           
             #print("end{}".format(i))
@@ -324,8 +383,18 @@ def execute_data():
         #print("train",episode)
         agents.train()
 
+        T = agents.actor.T
+        e = agents.actor.e
+        r = agents.actor.r
+        w = agents.actor.W
+        alpha = agents.alpha
+        beta = agents.beta
+
+        
+
         if episode % 16 == 0:
             #print(reward)
+            print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-16:]) / 16}")
 
     calc_log = np.zeros((10, 5))

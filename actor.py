@@ -17,7 +17,7 @@ device = config.select_device
 
 
 class Actor(nn.Module):
-    def __init__(self, T, e, r, w, persona,) -> None:
+    def __init__(self, T, e, r, w, persona) -> None:
         super().__init__()
         self.T = nn.Parameter(
             torch.tensor(T).float().to(device), requires_grad=True
@@ -35,8 +35,8 @@ class Actor(nn.Module):
         
 
     def calc_ration(self,attributes, edges,persona):
-
-        calc_policy = torch.empty(4,32)
+        
+        calc_policy = torch.empty(len(persona),32)
         edges = (edges > 0).float().to(device)
         for i in range(len(persona)):
 
