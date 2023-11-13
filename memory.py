@@ -20,13 +20,13 @@ class Memory:
         self.observation_edges
         self.observation_features
 
-        pi = torch.empty
+        pi = torch.empty([32,5,32])
         for i in range(self.agent_num):
             #self.pi[i]:エージェントiの方策の配列
             #self.pi[i]を列方向に結合し、
             #print(self.pi[i])
             #print(len(self.pi[i]))
-            pi.append(self.pi[i])
+            pi[i]=self.pi[:,i]
     
             #全てのエージェントの行動確率の値
       

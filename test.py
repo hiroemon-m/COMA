@@ -70,11 +70,15 @@ class COMA:
         actor_optimizer = self.actors_optimizer
         critic_optimizer = self.critic_optimizer
         actions, observation_edges,observation_features, pi, reward= self.memory.get()
+
         #reward = torch.sum(reward,dim=2)
         #viewは5->10までの区間を予測したいので5
-        observation_edges_flatten = torch.tensor(np.array(observation_edges)).view(5,-1)
-        observation_features_flatten = torch.tensor(np.array(observation_features)).view(5,-1)
-        actions_flatten = torch.tensor(actions).view(5,-1)#4x1024
+        #observation_edges_flatten = torch.tensor(observation_edges).view(5,-1)
+        observation_edges_flatten = observation_edges.view(5,-1)
+        #observation_features_flatten = torch.tensor(observation_features).view(5,-1)
+        observation_features_flatten = observation_features.view(5,-1)
+        #actions_flatten = torch.tensor(actions).view(5,-1)#4x1024
+        actions_flatten = actions.view(5,-1)#4x1024
         #実験用後から消す
         actor_loss = 0
         for i in range(self.agent_num):
@@ -83,12 +87,12 @@ class COMA:
 
             input_critic = self.build_input_critic(i, observation_edges_flatten,observation_edges, observation_features_flatten, observation_features,actions_flatten,actions)
             Q_target = self.critic_target(input_critic)  
-            action_taken = torch.tensor(actions)[:,i,:].type(torch.long).reshape(5, -1)  
+            action_taken = actions[:,i,:].type(torch.long).reshape(5, -1)  
 
             #COMA 反証的ベースライン
-            baseline = torch.sum(torch.tensor(pi[i][:]) * Q_target, dim=1)
+            baseline = torch.sum(pi[i,:] * Q_target, dim=1)
             max_indices = []
-            Q_taken_target = []
+            Q_taken_target =torch.empty(5)
 
             #5->10を予測するので5
             for j in range(5):
@@ -100,19 +104,25 @@ class COMA:
                   
                     Q_taken_target_num += Q_target[j][actions_taken[j][k]]
 
-                Q_taken_target.append(Q_taken_target_num)
-            Q_taken_target = torch.tensor(Q_taken_target)
+                Q_taken_target[j] = Q_taken_target_num
+            #print(max_indices)
+            #print("Q_tarrr",Q_taken_target.shape)
             #利得関数
             advantage = Q_taken_target - baseline
-            print("ad",advantage.shape)
+            #print("ad",advantage.shape)
             advantage_re = advantage.reshape(5,1)
-            log_pi_mul = torch.mul(torch.tensor(pi[i]),action_taken) 
-            print(action_taken.shape)
-            print(torch.tensor(pi[i]).shape)
+            log_pi_mul = torch.mul(pi[i],action_taken) 
+            #print("lpm",log_pi_mul[0])
+            log_pi_mul[log_pi_mul == float(0.0)] = torch.exp(torch.tensor(2.0))
+            #print(action_taken.shape)
+            #print(torch.tensor(pi[i]).shape)
             # loge:torch.log(torch.exp(torch.tensor(1.0)))
-            print("b",log_pi_mul[0])
+            #print("lpm",log_pi_mul[0])
             log_pi = torch.log(log_pi_mul)
-            log_pis = log_pi -1
+            #print("lp",log_pi[0])
+
+            log_pi[log_pi == float(2.0)] = 0.0
+            #print("lp",log_pi[0])
 
             #log_pi = torch.where(log_pi_mul == float("-inf"),0,log_pi_mul)
             # #通常は、計算グラフから分離されないが-infあるので分離される
@@ -120,13 +130,13 @@ class COMA:
             #print(log_pi[0])
             #print(log_pis[0])
             #以下のように変更
-            log_pis[log_pis == float("-inf")] = 0.0
+            #log_pis[log_pis == float("-inf")] = 0.0
             #print(log_pis[0])
             # = - を +=に変更
-            actor_loss += - torch.mean(advantage_re * log_pis)
+            actor_loss += - torch.mean(advantage_re * log_pi)
             #print("loss",actor_loss)
-            #actor_optimizer.zero_grad() 
-            #actor_loss.backward()
+            actor_optimizer.zero_grad() 
+            actor_loss.backward(retain_graph=True)
             
             #torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 5)
             #パラメータの更新
@@ -171,21 +181,22 @@ class COMA:
             #print("param",self.critic.state_dict())
             #critic_optimizer.step()
         #print("loss",actor_loss)
-        actor_optimizer.zero_grad() 
-        actor_loss.backward()
-        print("t",self.actor.T.grad,self.actor.T.is_leaf)
-        print("e",self.actor.e.grad,self.actor.e.is_leaf)
-        print("r",self.actor.r.grad,self.actor.r.is_leaf)
-        print("w",self.actor.W.grad,self.actor.W.is_leaf)
-
         print("log_pi",log_pi.grad_fn)
-        print("log_pis",log_pis.grad_fn)
+      
         print("log_pi_mul",log_pi_mul.grad_fn)
         print("advantage",advantage.grad_fn)
         print("advantage_re",advantage_re.grad_fn)
         print("Q_taken_tar",Q_taken_target.grad_fn)
         #print("Q_tar",Q_target.grad_fn)
         print("base",baseline.grad_fn)
+        #actor_optimizer.zero_grad() 
+        #actor_loss.backward()
+        print("t",self.actor.T.grad,self.actor.T.is_leaf)
+        print("e",self.actor.e.grad,self.actor.e.is_leaf)
+        print("r",self.actor.r.grad,self.actor.r.is_leaf)
+        print("w",self.actor.W.grad,self.actor.W.is_leaf)
+
+
         #print("pi",pi.is_leaf)
 
 
@@ -210,19 +221,21 @@ class COMA:
         batch_size = len(edges)
         ids = (torch.ones(batch_size) * agent_id).view(-1, 1)
         #5->10のデータの整形
-        edges_i = torch.tensor([edges[0][agent_id],edges[1][agent_id],edges[2][agent_id],edges[3][agent_id],edges[4][agent_id]])
-        features_i = torch.tensor([features[0][agent_id],features[1][agent_id],features[2][agent_id],features[3][agent_id],features[4][agent_id]])
+        edges_i = torch.empty(5,32)
+        edges_i = edges[:,agent_id]
+        features_i = torch.empty(5,features.shape[2])
+        features_i = features[:,agent_id]
         actions_i = torch.zeros(1,992)
         
         #iは時間
         #5->10までの区間を予測したいので5
         for i in range(5):
             if agent_id == 0:
-                action_i = torch.tensor(actions[i][agent_id+1:]).view(1,-1)
+                action_i = actions[i,agent_id+1:].view(1,-1)
             elif agent_id == 32:
-                action_i = torch.tensor(actions[i][:agent_id]).view(1,-1)
+                action_i = actions[i,:agent_id].view(1,-1)
             else:
-                action_i = torch.cat(tensors=(torch.tensor(actions[i][:agent_id]).view(1,-1),torch.tensor(actions[i][agent_id+1:]).view(1,-1)),dim=1)
+                action_i = torch.cat(tensors=(actions[i,:agent_id].view(1,-1),actions[i,agent_id+1:].view(1,-1)),dim=1)
             
             actions_i = torch.cat(tensors=(actions_i,action_i),dim=0)
 
@@ -315,12 +328,12 @@ def execute_data():
         dtype=np.float32,
     )
     e = np.array(
-        [0.8 for i in range(persona_num)],
+        [1.2 for i in range(persona_num)],
         dtype=np.float32,
     )
 
     r = np.array(
-        [0.9 for i in range(persona_num)],
+        [0.8 for i in range(persona_num)],
         dtype=np.float32,
     )
 

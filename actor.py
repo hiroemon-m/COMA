@@ -35,7 +35,9 @@ class Actor(nn.Module):
         
 
     def calc_ration(self,attributes, edges,persona):
-        
+        norm = attributes.norm(dim=1)[:, None] + 1e-8
+        attributes = attributes.div_(norm)
+        #attributes_t = attributes.t()
         calc_policy = torch.empty(len(persona),32)
         edges = (edges > 0).float().to(device)
         for i in range(len(persona)):
@@ -49,8 +51,8 @@ class Actor(nn.Module):
             x = x.div(self.T[i]).exp().mul(self.e[i])
             min_values = torch.min(x, dim=0).values
             max_values = torch.max(x, dim=0).values
-            x = (x - min_values) / ((max_values - min_values) + 1e-4)+1e-4
-            x = torch.nan_to_num(x)
+            x = (x - min_values) / ((max_values - min_values) + 1e-4)
+            x = torch.nan_to_num(x,nan=0.0)
             x = torch.tanh(x)
            
             calc_policy[i] = torch.sum(x,dim=1)

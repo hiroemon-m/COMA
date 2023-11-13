@@ -65,7 +65,8 @@ class Env:
     def state(self):
         #neighbor_mat = torch.mul(self.edges, self.edges)
         neighbor_mat = torch.mul(self.edges, self.edges)
-        print("mat",neighbor_mat.shape)
-        print(self.feature.shape)
+        #print("mat",neighbor_mat.shape)
+        #
+        # print(self.feature.shape)
 
         return neighbor_mat, self.feature
