@@ -48,18 +48,21 @@ class COMA:
         self.count = 0
 
     
-    def get_actions(self, edges,feat):
+    def get_actions(self,time, edges,feat):
         #観察
+        #tenosr返す
         prob,feat,_= self.actor.predict(feat,edges)
 
         for i in range(self.agent_num): 
-            self.memory.pi[i].append(prob[i].tolist())
+            self.memory.pi[time][i]=prob[i]
 
         action = prob.bernoulli()
         #observation,actionの配列に追加　actions,observationsは要素がエージェントの個数ある配列
-        self.memory.observation_edges.append(edges.tolist())
-        self.memory.observation_features.append(feat.tolist())
-        self.memory.actions.append(action.tolist())
+        self.memory.observation_edges[time]=edges
+        self.memory.observation_features[time]=feat
+        self.memory.actions[time]=action
+
+
         
         return feat,action
 
@@ -72,8 +75,8 @@ class COMA:
         observation_edges_flatten = torch.tensor(np.array(observation_edges)).view(5,-1)
         observation_features_flatten = torch.tensor(np.array(observation_features)).view(5,-1)
         actions_flatten = torch.tensor(actions).view(5,-1)#4x1024
-     
-
+        #実験用後から消す
+        actor_loss = 0
         for i in range(self.agent_num):
             # train actor
             #agentの数input_critic作る
@@ -101,20 +104,36 @@ class COMA:
             Q_taken_target = torch.tensor(Q_taken_target)
             #利得関数
             advantage = Q_taken_target - baseline
-            advantage = advantage.reshape(5,1)
-            log_pi = torch.log(torch.mul(torch.tensor(pi[i]),action_taken))
-            log_pi = torch.where(log_pi == float("-inf"),0,log_pi)
-            actor_loss = - torch.mean(advantage * log_pi)
-            print("loss",actor_loss)
-            actor_optimizer.zero_grad() 
-            actor_loss.backward()
+            print("ad",advantage.shape)
+            advantage_re = advantage.reshape(5,1)
+            log_pi_mul = torch.mul(torch.tensor(pi[i]),action_taken) 
+            print(action_taken.shape)
+            print(torch.tensor(pi[i]).shape)
+            # loge:torch.log(torch.exp(torch.tensor(1.0)))
+            print("b",log_pi_mul[0])
+            log_pi = torch.log(log_pi_mul)
+            log_pis = log_pi -1
+
+            #log_pi = torch.where(log_pi_mul == float("-inf"),0,log_pi_mul)
+            # #通常は、計算グラフから分離されないが-infあるので分離される
+        
+            #print(log_pi[0])
+            #print(log_pis[0])
+            #以下のように変更
+            log_pis[log_pis == float("-inf")] = 0.0
+            #print(log_pis[0])
+            # = - を +=に変更
+            actor_loss += - torch.mean(advantage_re * log_pis)
+            #print("loss",actor_loss)
+            #actor_optimizer.zero_grad() 
+            #actor_loss.backward()
             
             #torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 5)
             #パラメータの更新
             actor_optimizer.step()
             # パラメータがrequires_grad=Trueになっているか確認
-            for name, param in self.actor.named_parameters():
-                print(name, param.requires_grad)
+            #for name, param in self.actor.named_parameters():
+            #    print(name, param.requires_grad)
            
             #print("param",self.actor.state_dict())
 
@@ -144,13 +163,31 @@ class COMA:
             #critic_loss = torch.mean((r - Q_taken)**2)
             r = torch.autograd.Variable(r, requires_grad=True)
             Q = torch.autograd.Variable(Q, requires_grad=True)
-            critic_loss = torch.mean((r - Q_taken)**2)
-            critic_optimizer.zero_grad()
-            critic_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 5)
+            #critic_loss = torch.mean((r - Q_taken)**2)
+            #critic_optimizer.zero_grad()
+            #critic_loss.backward()
+            #torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 5)
 
             #print("param",self.critic.state_dict())
-            critic_optimizer.step()
+            #critic_optimizer.step()
+        #print("loss",actor_loss)
+        actor_optimizer.zero_grad() 
+        actor_loss.backward()
+        print("t",self.actor.T.grad,self.actor.T.is_leaf)
+        print("e",self.actor.e.grad,self.actor.e.is_leaf)
+        print("r",self.actor.r.grad,self.actor.r.is_leaf)
+        print("w",self.actor.W.grad,self.actor.W.is_leaf)
+
+        print("log_pi",log_pi.grad_fn)
+        print("log_pis",log_pis.grad_fn)
+        print("log_pi_mul",log_pi_mul.grad_fn)
+        print("advantage",advantage.grad_fn)
+        print("advantage_re",advantage_re.grad_fn)
+        print("Q_taken_tar",Q_taken_target.grad_fn)
+        #print("Q_tar",Q_target.grad_fn)
+        print("base",baseline.grad_fn)
+        #print("pi",pi.is_leaf)
+
 
         if self.count == self.target_update_steps:
             self.critic_target.load_state_dict(self.critic.state_dict())
@@ -204,7 +241,7 @@ class COMA:
     
 
 
-#EMのEstep
+#EMのEstep 全てtenosr返す
 def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
 
     actor = Actor(T,e,r,w,persona)
@@ -304,6 +341,7 @@ def execute_data():
     #n_episodes = 10000
     episodes = 64
     story_count = 5
+    episodes_reward = []
 
     for episode in range(episodes):
 
@@ -332,8 +370,7 @@ def execute_data():
                 persona=mixture_ratio
             )
   
-        episode_reward = 0
-        episodes_reward = []
+
 
 
         #M-step
@@ -341,12 +378,8 @@ def execute_data():
         agents = COMA(agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,alpha,beta)
 
 
-        episode_reward = 0
-        episodes_reward = []
-
         #n_episodes = 10000
-        episodes = 64
-        story_count = 5
+
     
 
 
@@ -361,7 +394,7 @@ def execute_data():
             #print("start{}".format(i))
             edges,feature = obs.state()
             #print("episode{}".format(episode),"story_count{}".format(i))
-            feat,action = agents.get_actions(edges,feature)
+            feat,action = agents.get_actions(i,edges,feature)
             reward = obs.step(feat,action)
 
 
