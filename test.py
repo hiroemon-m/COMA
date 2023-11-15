@@ -24,7 +24,7 @@ from critic import Critic
 device = config.select_device
 
 class COMA:
-    def __init__(self, agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik,alpha,beta):
+    def __init__(self, obs,agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik):
         self.agent_num = agent_num
         self.action_dim = action_dim
         self.input_size = 81580
@@ -32,19 +32,21 @@ class COMA:
         self.persona = rik
         self.target_update_steps = target_update_steps
         self.memory = Memory(agent_num, action_dim)
+        #self.actor = [Actor(T[i],e[i],r[i],w[i],rik[i]) for i in range(len(alpha))]
         self.actor = Actor(T,e,r,w,rik)
         self.critic = Critic(input_size, action_dim)
-        self.alpha = alpha
-        self.beta = beta
+        self.obs = obs
+        self.alpha = self.obs.alpha
+        self.beta = self.obs.beta
         #crit
         self.critic_target = Critic(input_size, action_dim)
         #critic.targetをcritic.state_dictから読み込む
         self.critic_target.load_state_dict(self.critic.state_dict())
         #adamにモデルを登録
         #self.actors_optimizer = [torch.optim.Adam(self.actor.parameters(), lr=lr_a) for i in range(agent_num)]
-        self.actors_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_a)
-        self.critic_optimizer = torch.optim.Adam([self.alpha,self.beta], lr=lr_c)
-
+        self.actors_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_a) 
+        self.critic_optimizer = torch.optim.Adam([self.obs.alpha,self.obs.beta], lr=lr_c)
+        self.ln = 0
         self.count = 0
 
     
@@ -52,7 +54,8 @@ class COMA:
         #観察
         #tenosr返す
         prob,feat,_= self.actor.predict(feat,edges)
-
+    
+        #print("prob",prob.shape)
         for i in range(self.agent_num): 
             self.memory.pi[time][i]=prob[i]
 
@@ -70,7 +73,10 @@ class COMA:
         actor_optimizer = self.actors_optimizer
         critic_optimizer = self.critic_optimizer
         actions, observation_edges,observation_features, pi, reward= self.memory.get()
-
+        lnpxz = pi.view(-1).sum()
+    
+        self.ln = lnpxz
+        #print("REWL75",reward[0])
         #reward = torch.sum(reward,dim=2)
         #viewは5->10までの区間を予測したいので5
         #observation_edges_flatten = torch.tensor(observation_edges).view(5,-1)
@@ -81,6 +87,7 @@ class COMA:
         actions_flatten = actions.view(5,-1)#4x1024
         #実験用後から消す
         actor_loss = 0
+        critic_loss = 0
         for i in range(self.agent_num):
             # train actor
             #agentの数input_critic作る
@@ -93,6 +100,7 @@ class COMA:
             baseline = torch.sum(pi[i,:] * Q_target, dim=1)
             max_indices = []
             Q_taken_target =torch.empty(5)
+            #Q_taken_li =[]
 
             #5->10を予測するので5
             for j in range(5):
@@ -102,11 +110,13 @@ class COMA:
 
                 for k in range(len(actions_taken[j])):
                   
-                    Q_taken_target_num += Q_target[j][actions_taken[j][k]]
+                    Q_taken_target_num =Q_taken_target_num + Q_target[j][actions_taken[j][k]]
+                    #Q_taken_li.append(Q_taken_target_num + Q_target[j][actions_taken[j][k]])
 
                 Q_taken_target[j] = Q_taken_target_num
+                #Q_taken_target = torch.tensor(Q_taken_li.sum())
             #print(max_indices)
-            #print("Q_tarrr",Q_taken_target.shape)
+            
             #利得関数
             advantage = Q_taken_target - baseline
             #print("ad",advantage.shape)
@@ -133,14 +143,14 @@ class COMA:
             #log_pis[log_pis == float("-inf")] = 0.0
             #print(log_pis[0])
             # = - を +=に変更
-            actor_loss += - torch.mean(advantage_re * log_pi)
+            actor_loss =actor_loss - torch.mean(advantage_re * log_pi)
             #print("loss",actor_loss)
-            actor_optimizer.zero_grad() 
-            actor_loss.backward(retain_graph=True)
+            #actor_optimizer.zero_grad() 
+            #actor_loss.backward(retain_graph=True)
             
             #torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 5)
             #パラメータの更新
-            actor_optimizer.step()
+            #actor_optimizer.step()
             # パラメータがrequires_grad=Trueになっているか確認
             #for name, param in self.actor.named_parameters():
             #    print(name, param.requires_grad)
@@ -149,55 +159,63 @@ class COMA:
 
             # train critic
             Q = self.critic(input_critic)
-            Q_taken = []
+            Q_taken = torch.empty(5)
             for j in range(5):
                 Q_value = 0
                 for k in range(len(actions_taken[j])):
                 
-                    Q_value += Q[j][actions_taken[j][k]]
-                Q_taken.append(Q_value)
-            Q_taken=torch.tensor(Q_taken)
+                    Q_value =Q_value + Q[j][actions_taken[j][k]]
+                Q_taken[j]=Q_value
+      
+            r = torch.empty(len(reward[:, i]))
 
-            r = torch.zeros(len(reward[:, i]))
-            #print(r.shape)
             for t in range(len(reward[:, i])):
                 #ゴールに到達した場合は,次の状態価値関数は0
                 if t == 4:
                     r[t] = reward[:, i][t]
+                    #r_li.append(reward[:, i][t])
                 #ゴールでない場合は、
                 else:
                     #Reward + γV(st+1)
                     #print(t, Q_taken_target[t + 1])
                     r[t] = reward[:, i][t] + self.gamma * Q_taken_target[t + 1]
 
-            #critic_loss = torch.mean((r - Q_taken)**2)
-            r = torch.autograd.Variable(r, requires_grad=True)
-            Q = torch.autograd.Variable(Q, requires_grad=True)
-            #critic_loss = torch.mean((r - Q_taken)**2)
-            #critic_optimizer.zero_grad()
-            #critic_loss.backward()
+
+
+            critic_loss = critic_loss + torch.mean((r - Q_taken)**2)
+           
+        critic_optimizer.zero_grad()
+        critic_loss.backward(retain_graph=True)
+       
+        with torch.no_grad():
+            self.obs.alpha -= 0.005 * self.obs.alpha.grad
+            self.obs.beta -= 0.005 * self.obs.beta.grad
+
+   
+     
+        #actor
             #torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 5)
 
-            #print("param",self.critic.state_dict())
-            #critic_optimizer.step()
-        #print("loss",actor_loss)
-        print("log_pi",log_pi.grad_fn)
-      
-        print("log_pi_mul",log_pi_mul.grad_fn)
-        print("advantage",advantage.grad_fn)
-        print("advantage_re",advantage_re.grad_fn)
-        print("Q_taken_tar",Q_taken_target.grad_fn)
-        #print("Q_tar",Q_target.grad_fn)
-        print("base",baseline.grad_fn)
-        #actor_optimizer.zero_grad() 
-        #actor_loss.backward()
-        print("t",self.actor.T.grad,self.actor.T.is_leaf)
-        print("e",self.actor.e.grad,self.actor.e.is_leaf)
-        print("r",self.actor.r.grad,self.actor.r.is_leaf)
-        print("w",self.actor.W.grad,self.actor.W.is_leaf)
 
 
-        #print("pi",pi.is_leaf)
+        actor_optimizer.zero_grad() 
+        actor_loss.backward()
+         
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 5)
+        #パラメータの更新
+        print(self.actor.T.grad)
+        print(self.actor.e.grad)
+        print(self.actor.r.grad)
+        print(self.actor.W.grad)
+
+        with torch.no_grad():
+            self.actor.T -= 0.1 * self.actor.T.grad
+            self.actor.e -= 1 * self.actor.e.grad
+            self.actor.r -= 0.1 * self.actor.r.grad
+            self.actor.W -= 0.1 * self.actor.W.grad
+            
+          
+
 
 
         if self.count == self.target_update_steps:
@@ -307,7 +325,7 @@ def execute_data():
     action_dim = 32
     gamma = 0.99
     lr_a = 0.0001
-    lr_c = 0.005
+    lr_c = 0.01
     target_update_steps = 8
     alpha = torch.from_numpy(
         np.array(
@@ -324,16 +342,16 @@ def execute_data():
     ).to(device)
 
     T = np.array(
-        [0.8 for i in range(persona_num)],
+        [1.0,1.0,1.0,1.0],
         dtype=np.float32,
     )
     e = np.array(
-        [1.2 for i in range(persona_num)],
+        [1.0,1.0,1.0,1.0],
         dtype=np.float32,
     )
 
     r = np.array(
-        [0.8 for i in range(persona_num)],
+        [0.9,0.9,0.9,0.9],
         dtype=np.float32,
     )
 
@@ -353,10 +371,13 @@ def execute_data():
 
     #n_episodes = 10000
     episodes = 64
+    episode = 0
     story_count = 5
     episodes_reward = []
+    ln_sub = 100
+    ln = 500
 
-    for episode in range(episodes):
+    while ln_sub > 0.001:
 
         # E-step
         mixture_ratio = e_step(
@@ -377,7 +398,6 @@ def execute_data():
                 agent_num = agent_num,
                 edges=load_data.adj[LEARNED_TIME].clone(),
                 feature=load_data.feature[LEARNED_TIME].clone(),
-                temper=T,
                 alpha=alpha,
                 beta=beta,
                 persona=mixture_ratio
@@ -385,10 +405,21 @@ def execute_data():
   
 
 
-
+        print(mixture_ratio)
         #M-step
+        obs.reset(
+                load_data.adj[LEARNED_TIME].clone(),
+                load_data.feature[LEARNED_TIME].clone(),
+                alpha=alpha,
+                beta=beta,
+                persona=mixture_ratio
+                )
+        #print("T",T,e,r,w)
+        #print("mixture_ration",mixture_ratio[0])
         
-        agents = COMA(agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,alpha,beta)
+        episode_reward = 0
+        
+        agents = COMA(obs,agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio)
 
 
         #n_episodes = 10000
@@ -396,11 +427,7 @@ def execute_data():
     
 
 
-        obs.reset(
-                load_data.adj[LEARNED_TIME].clone(),
-                load_data.feature[LEARNED_TIME].clone()
-                )
-        episode_reward = 0
+
         #いらんくねepisodes_reward = []
     
         for i in range(story_count):
@@ -412,7 +439,8 @@ def execute_data():
 
 
             #reward tensor(-39.2147, grad_fn=<SumBackward0>)
-            agents.memory.reward.append(reward.tolist())
+            agents.memory.reward[i]=reward
+            #print("reward",agents.memory.reward[0])
 
             episode_reward += reward.sum()
 
@@ -435,10 +463,15 @@ def execute_data():
         w = agents.actor.W
         alpha = agents.alpha
         beta = agents.beta
+        ln_before = ln
+        ln = agents.ln
+        ln_sub =abs(ln-ln_before)
+        episode += 1
+        print("ln",ln_sub)
 
         
 
-        if episode % 16 == 0:
+        if episode % 15 == 0:
             #print(reward)
             print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-16:]) / 16}")
@@ -452,6 +485,9 @@ def execute_data():
         obs.reset(
             load_data.adj[LEARNED_TIME].clone(),
             load_data.feature[LEARNED_TIME].clone(),
+            alpha=alpha,
+            beta=beta,
+            persona=mixture_ratio
         )
 
         for t in range(TOTAL_TIME - GENERATE_TIME):
@@ -459,11 +495,12 @@ def execute_data():
             #field.state()隣接行列、属性値を返す
             #neighbor_state, feat = field.state()
             #->部分観測(自分のエッジの接続、属性値の情報)にする
+          
             edges, feature = obs.state()
             #print("stae",neighbor_state)
             #print("feat",feat)
             feat, action = agents.get_actions(
-                edges, feature
+                t,edges, feature
             )
             del edges, feature
 
@@ -509,14 +546,15 @@ def execute_data():
             gc.collect()
 
 
-            pi_test= agents.memory.test()
+            pi_test= agents.memory.test(t)
             #print(len(pi_test))
             #print(len(pi_test[0]))
             #print(len(pi_test[0][0]))
-            flattened_list = [item for sublist1 in pi_test for sublist2 in sublist1 for item in sublist2]
-            #print(len(flattened_list))
-            pi_test = torch.tensor(flattened_list)
-            
+            #flattened_list = [item for sublist1 in pi_test for sublist2 in sublist1 for item in sublist2]
+            ##print(len(flattened_list))
+            #pi_test = torch.tensor(flattened_list)
+            pi_test = pi_test.view(-1)
+
             gc.collect()
             detach_edge = (
                 torch.ravel(load_data.adj[GENERATE_TIME + t])
@@ -536,6 +574,7 @@ def execute_data():
             #print(edge_numpy.shape)
             #print(edge_predict_probs.shape)
             # NLLを計算
+
             criterion = nn.CrossEntropyLoss()
             error_edge = criterion(
                 torch.from_numpy(edge_predict_probs),
