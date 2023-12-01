@@ -74,7 +74,7 @@ class COMA:
         critic_optimizer = self.critic_optimizer
         actions, observation_edges,observation_features, pi, reward= self.memory.get()
         lnpxz = pi.view(-1).sum()
-    
+        print("ln",lnpxz)
         self.ln = lnpxz
         #print("REWL75",reward[0])
         #reward = torch.sum(reward,dim=2)
@@ -342,16 +342,16 @@ def execute_data():
     ).to(device)
 
     T = np.array(
-        [1.0,1.0,1.0,1.0],
+        [1.0,0.9,0.8,0.7],
         dtype=np.float32,
     )
     e = np.array(
-        [1.0,1.0,1.0,1.0],
+        [1.2,1.1,1.0,0.9],
         dtype=np.float32,
     )
 
     r = np.array(
-        [0.9,0.9,0.9,0.9],
+        [0.75,0.8,0.9,0.95],
         dtype=np.float32,
     )
 
@@ -377,7 +377,8 @@ def execute_data():
     ln_sub = 100
     ln = 500
 
-    while ln_sub > 0.001:
+    #while ln_sub > 0.1:
+    for i in range(episodes):
 
         # E-step
         mixture_ratio = e_step(
