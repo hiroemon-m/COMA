@@ -42,10 +42,11 @@ class COMA:
         self.critic_target = Critic(input_size, action_dim)
         #critic.targetをcritic.state_dictから読み込む
         self.critic_target.load_state_dict(self.critic.state_dict())
+        params = [self.obs.alpha,self.obs.beta]
         #adamにモデルを登録
         #self.actors_optimizer = [torch.optim.Adam(self.actor.parameters(), lr=lr_a) for i in range(agent_num)]
         self.actors_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_a) 
-        self.critic_optimizer = torch.optim.Adam([self.obs.alpha,self.obs.beta], lr=lr_c)
+        self.critic_optimizer = torch.optim.Adam(params, lr=0.01)
         self.ln = 0
         self.count = 0
 
@@ -53,6 +54,9 @@ class COMA:
     def get_actions(self,time, edges,feat):
         #観察
         #tenosr返す
+        #norm = feat.norm(dim=1)[:, None] 
+        #norm = norm + 1e-8
+        #feat = feat.div(norm)
         prob,feat,_= self.actor.predict(feat,edges)
     
         #print("prob",prob.shape)
@@ -151,6 +155,7 @@ class COMA:
             #torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 5)
             #パラメータの更新
             #actor_optimizer.step()
+   
             # パラメータがrequires_grad=Trueになっているか確認
             #for name, param in self.actor.named_parameters():
             #    print(name, param.requires_grad)
@@ -186,11 +191,18 @@ class COMA:
            
         critic_optimizer.zero_grad()
         critic_loss.backward(retain_graph=True)
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 5)
+        print("a&b_grad",self.obs.alpha,self.obs.beta)
+
+        #critic_optimizer.step()
        
         with torch.no_grad():
-            self.obs.alpha -= 0.005 * self.obs.alpha.grad
-            self.obs.beta -= 0.005 * self.obs.beta.grad
+            self.obs.alpha -= 0.001 * self.obs.alpha.grad
+            self.obs.beta -= 0.001 * self.obs.beta.grad
 
+        print("a&b_grad",self.obs.alpha.grad,self.obs.beta.grad,self.obs.persona.grad)
+        print("a&b_grad",self.obs.alpha,self.obs.beta)
+        print("a&b_grad",self.obs.alpha.grad.is_leaf,self.obs.beta.grad.is_leaf)
    
      
         #actor
@@ -200,19 +212,25 @@ class COMA:
 
         actor_optimizer.zero_grad() 
         actor_loss.backward()
-         
-        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 5)
-        #パラメータの更新
-        print(self.actor.T.grad)
-        print(self.actor.e.grad)
-        print(self.actor.r.grad)
-        print(self.actor.W.grad)
 
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 5)
+        #パラメータの更
+
+        #actor_optimizer.step()
+        print("log_pi_grad",log_pi.grad_fn)
+        print("log_pi_mul_grad",log_pi_mul.grad_fn)
+        print("advantage_grad",advantage.grad_fn)
+        print("pi_grad",pi.grad_fn)
+        print("pi_grad",self.memory.pi.grad_fn)
+        print("T_grad",self.actor.T.grad)
+        print("e_grad",self.actor.e.grad)
+        print("r_grad",self.actor.r.grad)
+        print("w_grad",self.actor.W.grad)
         with torch.no_grad():
-            self.actor.T -= 0.1 * self.actor.T.grad
-            self.actor.e -= 1 * self.actor.e.grad
-            self.actor.r -= 0.1 * self.actor.r.grad
-            self.actor.W -= 0.1 * self.actor.W.grad
+            self.actor.T -= 0.001 * self.actor.T.grad
+            self.actor.e -= 0.001 * self.actor.e.grad
+            self.actor.r -= 0.001 * self.actor.r.grad
+            self.actor.W -= 0.001 * self.actor.W.grad
             
           
 
@@ -278,7 +296,7 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
     actor = Actor(T,e,r,w,persona)
   
     #personaはじめは均等
-    policy_ration = torch.empty(step,len(persona),agent_num)
+    policy_ration = torch.empty(step,len(persona[0]),agent_num)
 
     for time in range(step):
         polic_prob = actor.calc_ration(
@@ -291,7 +309,7 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
 
 
     #分子　全ての時間　 あるペルソナに注目
-    rik = torch.empty(32,len(persona))
+    rik = torch.empty(32,len(persona[0]))
 
 
     top = torch.sum(policy_ration,dim = 0)
@@ -303,7 +321,7 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
     ration = torch.div(top,bottom)
 
     for i in range(agent_num):
-        for k in range(len(persona)):
+        for k in range(len(persona[0])):
             rik[i,k] = ration[k,i]
 
     return rik
@@ -312,21 +330,35 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
 def execute_data():
     ##デバッグ用
     torch.autograd.set_detect_anomaly(True)
-    #alpha,betaの読み込み
 
+
+    #初期の設定(データサイズ、ペルソナの数、学習、生成時間)
     data_size = 32
-    persona_num = 4
+    persona_num = 16
     LEARNED_TIME = 4
     GENERATE_TIME = 5
     TOTAL_TIME = 10
+    #データの読み込み
     load_data = init_real_data()
     agent_num = len(load_data.adj[LEARNED_TIME])
+    #パラメータの設定
     input_size = 81580
     action_dim = 32
     gamma = 0.99
-    lr_a = 0.0001
+    lr_a = 0.1
     lr_c = 0.01
     target_update_steps = 8
+
+    data_persona = []
+    #ペルソナ2の時
+    #--------------
+    path = "/Users/matsumoto-hirotomo/coma/data_norm{}.csv".format(int(persona_num))
+    csvfile = open(path, 'r')
+    gotdata = csv.reader(csvfile)
+    for row in gotdata:
+        data_persona.append(int(row[2]))
+    csvfile.close()
+    
     alpha = torch.from_numpy(
         np.array(
             [1.0 for i in range(persona_num)],
@@ -341,36 +373,46 @@ def execute_data():
         ),
     ).to(device)
 
-    T = np.array(
-        [1.0,0.9,0.8,0.7],
+    T = torch.from_numpy(
+        np.array(
+        [1.0 for i in range(persona_num)],
         dtype=np.float32,
-    )
-    e = np.array(
-        [1.2,1.1,1.0,0.9],
+    ),
+    ).to(device)
+    e = torch.from_numpy(
+        np.array(
+        [1.0 for i in range(persona_num)],
         dtype=np.float32,
-    )
+    ),
+    ).to(device)
 
-    r = np.array(
-        [0.75,0.8,0.9,0.95],
+    r = torch.from_numpy(
+        np.array(
+        [1.0 for i in range(persona_num)],
         dtype=np.float32,
-    )
+    ),
+    ).to(device)
 
-    w = np.array(
-        [1e-2 for i in range(persona_num)],
+    w = torch.from_numpy(
+        np.array(
+        [1.0 for i in range(persona_num)],
         dtype=np.float32,
-    )
+    ),
+    ).to(device)
 
-    persona = np.array(
+    persona = torch.from_numpy(
+        np.array(
         [0.25 for i in range(4)],
         dtype=np.float32,
-    )
+    ),
+    ).to(device)
 
     N = len(alpha)
 
 
 
     #n_episodes = 10000
-    episodes = 64
+    episodes = 100
     episode = 0
     story_count = 5
     episodes_reward = []
@@ -381,17 +423,33 @@ def execute_data():
     for i in range(episodes):
 
         # E-step
-        mixture_ratio = e_step(
-            agent_num=agent_num,
-            load_data=load_data,
-            T=T,
-            e=e,
-            r=r,
-            w=w,
-            persona=persona,
-            step = GENERATE_TIME,
-            base_time=LEARNED_TIME
-            )
+        if i == 0:
+            rik = torch.empty(32,persona_num)
+            for i in range(agent_num):
+                    rik[i] = (1-0.3)/persona_num
+                    rik[i][data_persona[i]] = 0.3
+            mixture_ratio = rik
+            persona_ration = rik
+            print(mixture_ratio.size())
+
+            
+
+         
+        else:
+            print(i)
+            print("-------------------------")
+            mixture_ratio = e_step(
+                agent_num=agent_num,
+                load_data=load_data,
+                T=T,
+                e=e,
+                r=r,
+                w=w,
+                persona=persona_ration,
+                step = GENERATE_TIME,
+                base_time=LEARNED_TIME
+                )
+            print("mm",mixture_ratio.size())
         #personaはじめは均等
         if episode == 0:
                     #環境の設定
@@ -462,17 +520,19 @@ def execute_data():
         e = agents.actor.e
         r = agents.actor.r
         w = agents.actor.W
+       
         alpha = agents.alpha
         beta = agents.beta
+        print("alpha",alpha)
         ln_before = ln
         ln = agents.ln
         ln_sub =abs(ln-ln_before)
         episode += 1
-        print("ln",ln_sub)
-
+        print("ln_sub",ln_sub)
+        print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
         
 
-        if episode % 15 == 0:
+        if episode % 10 == 0:
             #print(reward)
             print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-16:]) / 16}")

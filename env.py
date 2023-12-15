@@ -24,7 +24,10 @@ class Env:
         self.alpha = alpha.clone().detach().requires_grad_(True)
         
         self.beta = beta.clone().detach().requires_grad_(True)
+        #self.alpha = alpha.requires_grad_(True)
+        #self.beta = beta.requires_grad_(True)
         self.persona = persona.clone().detach().requires_grad_(True)
+        #self.persona = persona.requires_grad_(True)
 
         # 特徴量の正規化
         norm = self.feature.norm(dim=1)[:, None] + 1e-8

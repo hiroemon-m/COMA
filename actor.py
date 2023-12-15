@@ -20,16 +20,17 @@ class Actor(nn.Module):
     def __init__(self, T, e, r, w, persona) -> None:
         super().__init__()
         self.T = nn.Parameter(
-            torch.tensor(T).float().to(device), requires_grad=True
+            T.clone().detach().requires_grad_(True)
         )
+        
         self.e = nn.Parameter(
-            torch.tensor(e).float().to(device), requires_grad=True
+            e.clone().detach().requires_grad_(True)
         )
         self.r = nn.Parameter(
-            torch.tensor(r).float().view(-1, 1).to(device), requires_grad=True
+          r.view(-1,1).clone().detach().requires_grad_(True)
         )
         self.W = nn.Parameter(
-            torch.tensor(w).float().view(-1, 1).to(device), requires_grad=True
+           w.view(-1,1).clone().detach().requires_grad_(True)
         )
         self.persona = persona
         
@@ -38,9 +39,10 @@ class Actor(nn.Module):
         norm = attributes.norm(dim=1)[:, None] + 1e-8
         attributes = attributes.div_(norm)
         #attributes_t = attributes.t()
-        calc_policy = torch.empty(len(persona),32)
+        calc_policy = torch.empty(len(persona[0]),32)
         edges = (edges > 0).float().to(device)
-        for i in range(len(persona)):
+        #print(len(persona[0]))
+        for i in range(len(persona[0])):
 
             tmp_tensor = self.W[i] * torch.matmul(edges, attributes)
             r = self.r[i]
@@ -48,13 +50,14 @@ class Actor(nn.Module):
             feat = r * attributes + tmp_tensor * (1 - r)
             feat_prob = torch.tanh(feat)
             x = torch.mm(feat, feat.t())
-            x = x.div(self.T[i]).exp().mul(self.e[i])
+            #print("x",x.size())
+            x = x.div(self.T[i]).exp().mul(self.e[i])          
+            #print("x",x)
             min_values = torch.min(x, dim=0).values
             max_values = torch.max(x, dim=0).values
             x = (x - min_values) / ((max_values - min_values) + 1e-4)
-            x = torch.nan_to_num(x,nan=0.0)
+            #x = torch.nan_to_num(x,nan=0.0)
             x = torch.tanh(x)
-           
             calc_policy[i] = torch.sum(x,dim=1)
 
          
@@ -66,9 +69,11 @@ class Actor(nn.Module):
     def forward(
         self,attributes, edges
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        norm = attributes.norm(dim=1)[:, None] 
+        norm = norm + 1e-8
+        attributes = attributes.div(norm)
 
         edges = (edges > 0).float().to(device)
-
         #隣接ノードと自分の特徴量を集約する
         #print(edges.size()) 32x32
         #print(attributes.size())32x2411
@@ -95,9 +100,9 @@ class Actor(nn.Module):
         max_values = torch.max(x, dim=0).values
         # Min-Max スケーリング
         x = (x - min_values) / ((max_values - min_values) + 1e-4)+1e-4
-        #print(x[0])
 
         x = torch.tanh(x)
+
         #print(x)
 
 
