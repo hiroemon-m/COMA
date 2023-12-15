@@ -147,7 +147,7 @@ def em_algorism(N,K,X,mean,sigma):
             is_converged = True
         likehood = new_likehood
 
-    return gamma
+    return gamma,means
 
 
 def tolist(data) -> None:
@@ -167,7 +167,7 @@ def tolist(data) -> None:
 
 
 if __name__ == "__main__": 
-    path = "/Users/matsumoto-hirotomo/coma/model.param.data.fast"
+    path = "model.param.data.fast"
     dblp_alpha,dblp_beta = tolist(path)
     data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta})
     
@@ -179,7 +179,7 @@ if __name__ == "__main__":
     alpha,beta = tolist(path)
     data = pd.DataFrame({"alpha":alpha,"beta":beta})
     dblp_array = np.array([data_norm["alpha"].tolist(),
-                      data_norm["beta"].tolist()],np.float)
+                      data_norm["beta"].tolist()])
     dblp_array = dblp_array.T
     num = 4
     pred = KMeans(n_clusters=num).fit_predict(dblp_array)
@@ -203,7 +203,7 @@ if __name__ == "__main__":
 
 
     em = np.array(li)
-    path = "/content/drive/MyDrive/data/DBLP/model.param.data.fast"
+    path = "model.param.data.fast"
     alpha,beta = tolist(path)
     data = pd.DataFrame({"alpha":alpha,"beta":beta})
     dblp_kmean = data_norm
@@ -221,10 +221,14 @@ if __name__ == "__main__":
     means = []
     for i in mean:
         means.append(np.array(i))
-    gamma = em_algorism(500,num,em,means,sigma)
+    gamma,means = em_algorism(32,num,em,means,sigma)
     np.argmax(gamma,axis=1)
     np.save(
-    "gamma{}".formata(num), # データを保存するファイル名
+    "gamma{}".format(num), # データを保存するファイル名
     gamma,  # 配列型オブジェクト（listやnp.array)
+    )
+    np.save(
+    "means{}".format(num), # データを保存するファイル名
+    means,  # 配列型オブジェクト（listやnp.array)
     )
     

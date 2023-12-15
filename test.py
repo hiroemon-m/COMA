@@ -180,9 +180,27 @@ def execute_data():
     ##デバッグ用
     torch.autograd.set_detect_anomaly(True)
     #alpha,betaの読み込み
+       #ペルソナの取り出し
+    #ペルソナの数[3,4,6,8,12]
+    persona_num = 4
+    path = "gamma{}.npy".format(int(persona_num))
+    persona_ration = np.load(path)
+    persona_ration = persona_ration.astype("float32")
+    persona_ration = torch.from_numpy(persona_ration).to(device)
+
+
+    #print(persona_ration)
+    path = "means{}.npy".format(int(persona_num))
+    means = np.load(path)
+    means = means.astype("float32")
+    means = torch.from_numpy(means).to(device)
+    alpha = means[:,0]
+    beta = means[:,1]
+    #print("means",means)
+    #print("alpha",alpha)
 
     data_size = 32
-    persona_num = 4
+    persona_num = len(alpha)
     LEARNED_TIME = 0
     GENERATE_TIME = 5
     TOTAL_TIME = 10
@@ -194,20 +212,9 @@ def execute_data():
     lr_a = 0.0001
     lr_c = 0.005
     target_update_steps = 8
-    alpha = torch.from_numpy(
-        np.array(
-            [1.0 for i in range(data_size)],
-            dtype=np.float32,
-        ),
-    ).to(device)
+    alpha = alpha
 
-    beta = torch.from_numpy(
-        np.array(
-            [1.0 for i in range(data_size)],
-            dtype=np.float32,
-        ),
-    ).to(device)
-
+    beta = beta
     T = np.array(
         [0.8 for i in range(persona_num)],
         dtype=np.float32,
@@ -227,48 +234,14 @@ def execute_data():
         dtype=np.float32,
     )
 
-    persona = np.array(
-        [0.25 for i in range(4)],
-        dtype=np.float32,
-    )
+    persona = persona_ration
 
     N = len(alpha)
+    print(w)
 
-    # E-step
-    actor = Actor(T,e,r,w)
-#personaはじめは均等
-
-    policy_ration = torch.empty(GENERATE_TIME,len(persona),agent_num)
-    
-    for time in range(GENERATE_TIME):
-        polic_prob = actor.calc_ration(
-                    load_data.feature[time].clone(),
-                    load_data.adj[time].clone(),
-                    persona
-                    )
-        policy_ration[time] = polic_prob
-
-    
-    #分子　全ての時間　 あるペルソナに注目
-    rik = torch.empty(32,len(persona))
-
-
-    top = torch.sum(policy_ration,dim = 0)
-    print(top)
-    #分母 すべての時間,全てのpolicy_ration計算
-    bottom = torch.sum(top,dim=0)
-    print(bottom)
-    #for n in range(len(persona)):
-    ration = torch.div(top,bottom)
-
-    for i in range(agent_num):
-        for k in range(len(persona)):
-            rik[i,k] = ration[k,i]
-      
-    print(rik)
 
 #M-step
-    agents = COMA(agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w)
+    agents = COMA(agent_num, input_size, action_dim, lr_c, lr_a, persona, target_update_steps,T,e,r,w)
 
     obs = Env(
         edges=load_data.adj[LEARNED_TIME].clone(),
@@ -276,6 +249,7 @@ def execute_data():
         temper=T,
         alpha=alpha,
         beta=beta,
+        persona=persona
     )
 
 

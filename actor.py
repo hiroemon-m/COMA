@@ -69,6 +69,8 @@ class Actor(nn.Module):
         #隣接ノードと自分の特徴量を集約する
         #print(edges.size()) 32x32
         #print(attributes.size())32x2411
+        print(self.W.size())
+        print(torch.matmul(edges, attributes).size())
         tmp_tensor = self.W * torch.matmul(edges, attributes)
         #tmp_tensor = torch.matmul(edges, attributes)
         
