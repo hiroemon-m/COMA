@@ -1,16 +1,16 @@
 import torch
 
 class Memory:
-    def __init__(self, agent_num, action_dim):
+    def __init__(self, agent_num, action_dim,story_count):
         self.agent_num = agent_num
         self.action_dim = action_dim
-
-        self.actions = []
-        self.observation_edges = []
-        self.observation_features = []
+        self.story_count = story_count
+        self.actions = torch.empty([self.story_count,32,32])
+        self.observation_edges = torch.empty([self.story_count,32,32])
+        self.observation_features = torch.empty([self.story_count,32,2411])
         #エージェントの数だけ行数がある
-        self.pi = [[] for _ in range(agent_num)]
-        self.reward = []
+        self.pi = torch.empty([self.story_count,self.agent_num,32])
+        self.reward = torch.empty([self.story_count,32,1])
         #エージェントの数だけフラグがある
 
 
@@ -20,31 +20,27 @@ class Memory:
         self.observation_edges
         self.observation_features
 
-        pi = []
+        pi = torch.empty([32,self.story_count,32])
         for i in range(self.agent_num):
-            #self.pi[i]:エージェントiの方策の配列
-            #self.pi[i]を列方向に結合し、
-            #print(self.pi[i])
-            #print(len(self.pi[i]))
-            pi.append(self.pi[i])
+
+            pi[i]=self.pi[:,i]
     
             #全てのエージェントの行動確率の値
       
-        reward = torch.tensor(self.reward)
+        #reward = torch.tensor(self.reward)
+        #print(reward.shape)
         #reward (1x4)報酬
         #print(reward)
-        return actions, self.observation_edges, self.observation_features, pi, reward
+        return actions, self.observation_edges, self.observation_features, pi, self.reward
     
-    def test(self):
-            
+    def test(self,t):
+        actions = self.actions
+        self.observation_edges
+        self.observation_features
 
-            pi = []
-            for i in range(self.agent_num):
-                #self.pi[i]:エージェントiの方策の配列
-                #self.pi[i]を列方向に結合し、
-                #print(self.pi[i])
-                #print(len(self.pi[i]))
-                pi.append(self.pi[i])
+        pi = torch.empty([32,32])
+    
+        pi=self.pi[t]         
         
                 #全てのエージェントの行動確率の値
         
@@ -52,12 +48,13 @@ class Memory:
             #reward (1x4)報酬
             #print(reward)
           
-            return  pi
+        return  pi
 
 #初期化の関数
     def clear(self):
-        self.actions = []
-        self.observation_features = []
-        self.observation_edges = []
-        self.pi = [[] for _ in range(self.agent_num)]
-        self.reward = []
+        self.actions = torch.empty([self.story_count,32,32])
+        self.observation_edges = torch.empty([self.story_count,32,32])
+        self.observation_features = torch.empty([self.story_count,32,2411])
+        #エージェントの数だけ行数がある
+        self.pi = torch.empty([self.story_count,self.agent_num,32])
+        self.reward = torch.empty([self.story_count,32,1])

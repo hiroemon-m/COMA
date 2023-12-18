@@ -14,22 +14,39 @@ device = config.select_device
 
 
 class Env:
-    def __init__(self, edges, feature, temper,alpha,beta,persona) -> None:
+    def __init__(self, agent_num,edges, feature, temper,alpha,beta,persona) -> None:
+        self.agent_num = agent_num
         self.edges = edges
         self.feature = feature.to(device)
-        self.temper = temper
-        self.alpha = alpha
-        self.beta = beta
-        self.beta = 0.1
-        self.persona = persona
+        #self.alpha = alpha
+        #self.beta = beta
+        self.alpha = alpha.clone().detach().requires_grad_(True)
+        
+        self.beta = beta.clone().detach().requires_grad_(True)
+        #self.alpha = alpha.requires_grad_(True)
+        #self.beta = beta.requires_grad_(True)
+        self.persona = persona.clone().detach().requires_grad_(True)
+        #self.persona = persona.requires_grad_(True)
+
         # 特徴量の正規化
         norm = self.feature.norm(dim=1)[:, None] + 1e-8
         self.feature = self.feature.div_(norm)
         self.feature_t = self.feature.t()
+        self.sim = 0
+        self.costs = 0
+        self.persona_alpha = 0
+        self.persona_beta = 0
 
 
 
-    def reset(self, edges, attributes):
+
+    def reset(self, edges, attributes,alpha,beta,persona):
+        self.alpha = alpha.detach().clone().requires_grad_(True)
+        #self.alpha = alpha.requires_grad_(True)
+        self.beta = beta.detach().clone().requires_grad_(True)
+        #self.beta = beta.requires_grad_(True)
+        self.persona = persona.detach().clone().requires_grad_(True)
+        #self.persona = persona.requires_grad_(True)
         self.edges = edges
         self.feature = attributes
         # 特徴量の正規化
@@ -45,19 +62,22 @@ class Env:
         self.edges = next_mat
         next_feature = feature
         self.feature = next_feature
-        # 特徴量の正規化vactor.pyでやってる
-        #norm = self.feature.norm(dim=1)[:, None] + 1e-8
-        #self.feature = self.feature.div(norm)
-
         self.feature_t = self.feature.t()
-        dot_product = torch.mm(self.feature, self.feature_t)
-        reward = next_mat.mul(dot_product).mul(self.alpha)
-  
-        costs = next_mat.mul(self.beta)
-  
-        reward = reward.sub(costs)
-   
+        dot_product = torch.mm(self.feature, self.feature_t).to(device)
+        sim = torch.mul(self.edges,dot_product).sum(1)
+        persona_alpha = torch.mm(self.persona,self.alpha.view(self.persona.size()[1],1))
+        sim_alpha = sim.view(self.agent_num,1)*(persona_alpha.view(self.agent_num,1))
+        sim_add = torch.add(sim_alpha,0.001)
+        persona_beta = torch.mm(self.persona,self.beta.view(self.persona.size()[1],1))
+        costs = self.edges.sum(1).view(self.agent_num,1)*persona_beta.view(self.agent_num,1)
+        costs_add = torch.add(costs, 0.001)
+        reward = torch.sub(sim_add, costs_add)
+        self.sim = sim.sum()
+        self.costs = costs.sum()
+        self.persona_alpha = persona_alpha
+        self.persona_beta = persona_beta
         return reward
+
 
 
 
