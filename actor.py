@@ -56,10 +56,10 @@ class Actor(nn.Module):
             x = torch.tanh(x)
             #print("before",x[0])
             #print(persona[:,i])
-            persona_matrix = persona[:,i].view(-1, 1).repeat(1, 32)
+            #persona_matrix = persona[:,i].view(-1, 1).repeat(1, 32)
             #print(persona_matrix[0])
             #print(persona_matrix[:,0])
-            x =  persona_matrix*x
+            #x =  persona_matrix*x
             #x = torch.matmul(x,persona[:,i])
             #print("after",x[0])
         
