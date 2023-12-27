@@ -47,7 +47,7 @@ class COMA:
         #adamにモデルを登録
         #self.actors_optimizer = [torch.optim.Adam(self.actor.parameters(), lr=lr_a) for i in range(agent_num)]
         self.actors_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_a) 
-        self.critic_optimizer = torch.optim.Adam(params, lr=0.01)
+        self.critic_optimizer = torch.optim.Adam(params, lr=0.1)
         self.ln = 0
         self.count = 0
 
@@ -63,7 +63,9 @@ class COMA:
         #print("prob",prob.shape)
         for i in range(self.agent_num): 
             self.memory.pi[time][i]=prob[i]
-
+            #print(prob[i])
+            
+    
         action = prob.bernoulli()
         #observation,actionの配列に追加　actions,observationsは要素がエージェントの個数ある配列
         self.memory.observation_edges[time]=edges
@@ -191,14 +193,11 @@ class COMA:
            
         critic_optimizer.zero_grad()
         critic_loss.backward(retain_graph=True)
-        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 5)
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1)
         #print("a&b_grad",self.obs.alpha,self.obs.beta)
 
-        #critic_optimizer.step()
+        critic_optimizer.step()
        
-        with torch.no_grad():
-            self.obs.alpha -= 0.001 * self.obs.alpha.grad
-            self.obs.beta -= 0.001 * self.obs.beta.grad
 
         #print("a&b_grad",self.obs.alpha.grad,self.obs.beta.grad,self.obs.persona.grad)
         #print("a&b_grad",self.obs.alpha,self.obs.beta)
@@ -213,26 +212,31 @@ class COMA:
         actor_optimizer.zero_grad() 
         actor_loss.backward()
 
-        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 5)
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1)
         #パラメータの更
-
-        #actor_optimizer.step()
+        #print("T",self.actor.T)
+        #print("e",self.actor.e)
+        #print("r",self.actor.r)
+        #print("w",self.actor.W)
+        actor_optimizer.step()
         #print("log_pi_grad",log_pi.grad_fn)
         #print("log_pi_mul_grad",log_pi_mul.grad_fn)
         #print("advantage_grad",advantage.grad_fn)
         #print("pi_grad",pi.grad_fn)
         #print("pi_grad",self.memory.pi.grad_fn)
-        print("T_grad",self.actor.T.grad)
-        print("e_grad",self.actor.e.grad)
-        print("r_grad",self.actor.r.grad)
-        print("w_grad",self.actor.W.grad)
+
+        print("T_grad",self.actor.T.grad,self.actor.T)
+        print("e_grad",self.actor.e.grad,self.actor.e)
+        print("r_grad",self.actor.r.grad,self.actor.r)
+        print("w_grad",self.actor.W.grad,self.actor.W)
+
         with torch.no_grad():
-            self.actor.T -= 0.01 * self.actor.T.grad
-            self.actor.e -= 0.1 * self.actor.e.grad
-            self.actor.r -= 0.01 * self.actor.r.grad
-            self.actor.W -= 0.005 * self.actor.W.grad
+            self.actor.T -= 0.0001 * self.actor.T.grad
+            self.actor.e -= 0.0001 * self.actor.e.grad
+            self.actor.r -= 0.0001 * self.actor.r.grad
+            self.actor.W -= 0.0001 * self.actor.W.grad
             
-          
+
 
 
 
@@ -289,7 +293,40 @@ class COMA:
         return input_critic
     
 
+def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
 
+    actor = Actor(T,e,r,w,persona)
+  
+    #personaはじめは均等
+    policy_ration = torch.empty(step,len(persona[0]),agent_num)
+
+    for time in range(step):
+        polic_prob = actor.calc_ration(
+                    load_data.feature[base_time+time].clone(),
+                    load_data.adj[base_time+time].clone(),
+                    persona
+                    )
+
+        policy_ration[time] = polic_prob
+
+
+    #分子　全ての時間　 あるペルソナに注目
+    rik = torch.empty(32,len(persona[0]))
+
+
+    top = torch.sum(policy_ration,dim = 0)
+
+    #分母 すべての時間,全てのpolicy_ration計算
+    bottom = torch.sum(top,dim=0)
+
+    #for n in range(len(persona)):
+    ration = torch.div(top,bottom)
+
+    for i in range(agent_num):
+        for k in range(len(persona[0])):
+            rik[i,k] = ration[k,i]
+
+    return rik
 
 
 def execute_data():
@@ -298,7 +335,7 @@ def execute_data():
     #alpha,betaの読み込み
        #ペルソナの取り出し
     #ペルソナの数[3,4,6,8,12]
-    persona_num = 8
+    persona_num =  4
     path = "gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
@@ -312,11 +349,10 @@ def execute_data():
     means = torch.from_numpy(means).to(device)
     alpha = means[:,0]
     beta = means[:,1]
-    #print("means",means)
-    #print("alpha",alpha)
-
+    print("means",means)
+    print("alpha",alpha)
+    print("beta",beta)
     data_size = 32
-    persona_num = len(alpha)
     LEARNED_TIME = 4
     GENERATE_TIME = 5
     TOTAL_TIME = 10
@@ -325,14 +361,14 @@ def execute_data():
     input_size = 81580
     action_dim = 32
     gamma = 0.90
-    lr_a = 0.0001
+    lr_a = 0.1
     lr_c = 0.005
     target_update_steps = 8
     alpha = alpha
 
     beta = beta
     T = np.array(
-        [0.8 for i in range(persona_num)],
+        [1.0 for i in range(persona_num)],
         dtype=np.float32,
     )
     e = np.array(
@@ -341,12 +377,12 @@ def execute_data():
     )
 
     r = np.array(
-        [0.9 for i in range(persona_num)],
+        [1.0 for i in range(persona_num)],
         dtype=np.float32,
     )
 
     w = np.array(
-        [1e-2 for i in range(persona_num)],
+        [1.0 for i in range(persona_num)],
         dtype=np.float32,
     )
 
@@ -355,40 +391,69 @@ def execute_data():
     N = len(alpha)
     print(w)
 
-    episodes = 32
-    story_count = 32
-#M-step
-    obs = Env(
-        agent_num=agent_num,
-        edges=load_data.adj[LEARNED_TIME].clone(),
-        feature=load_data.feature[LEARNED_TIME].clone(),
-        temper=T,
-        alpha=alpha,
-        beta=beta,
-        persona=persona
-    )
-    agents = COMA(obs,agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,persona,story_count)
+    episodes = 200
+    story_count = 5
+    ln = 0
+    sub_ln = []
+    flag = True
+    episode = 0
 
 
-    episode_reward = 0
-    episodes_reward = []
+
 
     #n_episodes = 10000
 
- 
-    for episode in range(episodes):
+    while flag or ln_sub <= 0.1:
+        
 
+
+        # E-step
+        if episode == 0:
+
+            mixture_ratio = persona_ration
+       
+        else:
+            print(episode)
+            print("-------------------------")
+            mixture_ratio = e_step(
+                agent_num=agent_num,
+                load_data=load_data,
+                T=T,
+                e=e,
+                r=r,
+                w=w,
+                persona=persona_ration,
+                step = GENERATE_TIME,
+                base_time=LEARNED_TIME
+                )
+ 
+        #personaはじめは均等
+        if episode == 0:
+                    #環境の設定
+            obs = Env(
+                agent_num=agent_num,
+                edges=load_data.adj[LEARNED_TIME].clone(),
+                feature=load_data.feature[LEARNED_TIME].clone(),
+                temper=T,
+                alpha=alpha,
+                beta=beta,
+                persona=mixture_ratio
+            )
+    
    
         obs.reset(
                 load_data.adj[LEARNED_TIME].clone(),
                 load_data.feature[LEARNED_TIME].clone(),
                 alpha=alpha,
                 beta=beta,
-                persona=persona
+                persona=mixture_ratio
                 )
         episode_reward = 0
         episodes_reward = []
-    
+        agents = COMA(obs,agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,story_count)
+
+
+
         for i in range(story_count):
             #print("start{}".format(i))
             edges,feature = obs.state()
@@ -419,7 +484,13 @@ def execute_data():
         e = agents.actor.e
         r = agents.actor.r
         w = agents.actor.W
-       
+        ln_before = ln
+        ln = agents.ln
+        ln_sub =abs(ln-ln_before)
+        episode += 1
+        sub_ln.append([ln_sub,episode_reward])
+        print("ln_sub---------------------------------",ln_sub)
+        episode += 1
         alpha = agents.alpha
         beta = agents.beta
         print("reward",episodes_reward[-1])
@@ -427,12 +498,13 @@ def execute_data():
             #print(reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
             print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
-
+        if episode == 200:
+            flag = False
     calc_log = np.zeros((10, 5))
     calc_nll_log = np.zeros((10, 5))
     attr_calc_log = np.zeros((10, 5))
     attr_calc_nll_log = np.zeros((10, 5))
-
+    print(sub_ln)
     for count in range(10):
         obs.reset(
             load_data.adj[LEARNED_TIME].clone(),
