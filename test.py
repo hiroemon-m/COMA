@@ -334,7 +334,7 @@ def execute_data():
 
     #初期の設定(データサイズ、ペルソナの数、学習、生成時間)
     data_size = 32
-    persona_num = 16
+    persona_num = 8
     LEARNED_TIME = 4
     GENERATE_TIME = 5
     TOTAL_TIME = 10
@@ -662,7 +662,8 @@ def execute_data():
     np.save("proposed_edge_nll", calc_nll_log)
     np.save("proposed_attr_auc", attr_calc_log)
     np.save("proposed_attr_nll", attr_calc_nll_log)
-  
+    np.save("parameter",np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
+    np.save("rw_paramerter",np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
 
 
 
