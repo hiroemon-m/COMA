@@ -218,23 +218,26 @@ class COMA:
         #print("e",self.actor.e)
         #print("r",self.actor.r)
         #print("w",self.actor.W)
-        actor_optimizer.step()
+        #actor_optimizer.step()
         #print("log_pi_grad",log_pi.grad_fn)
         #print("log_pi_mul_grad",log_pi_mul.grad_fn)
         #print("advantage_grad",advantage.grad_fn)
         #print("pi_grad",pi.grad_fn)
         #print("pi_grad",self.memory.pi.grad_fn)
 
-        print("T_grad",self.actor.T.grad,self.actor.T)
-        print("e_grad",self.actor.e.grad,self.actor.e)
-        print("r_grad",self.actor.r.grad,self.actor.r)
-        print("w_grad",self.actor.W.grad,self.actor.W)
+
 
         with torch.no_grad():
-            self.actor.T -= 0.0001 * self.actor.T.grad
-            self.actor.e -= 0.0001 * self.actor.e.grad
-            self.actor.r -= 0.0001 * self.actor.r.grad
-            self.actor.W -= 0.0001 * self.actor.W.grad
+           
+            self.actor.T -= 1 * self.actor.T.grad
+            self.actor.e -= 10000 * self.actor.e.grad
+            self.actor.r -= 1 * self.actor.r.grad
+            self.actor.W -= 1 * self.actor.W.grad
+
+        print("T_grad",self.actor.T.grad,str(0.0001 * self.actor.T.grad),self.actor.T)
+        print("e_grad",self.actor.e.grad,str(10000 * self.actor.e.grad),self.actor.e)
+        print("r_grad",self.actor.r.grad,str(0.0001 * self.actor.r.grad),self.actor.r)
+        print("w_grad",self.actor.W.grad,str(10 * self.actor.W.grad),self.actor.W)
             
 
 
@@ -334,8 +337,8 @@ def execute_data():
     torch.autograd.set_detect_anomaly(True)
     #alpha,betaの読み込み
        #ペルソナの取り出し
-    #ペルソナの数[3,4,6,8,12]
-    persona_num =  4
+    #ペルソナの数[3,4,5,6,8,12]
+    persona_num =  6
     path = "gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
@@ -392,7 +395,7 @@ def execute_data():
     print(w)
 
     episodes = 200
-    story_count = 5
+    story_count = 20
     ln = 0
     sub_ln = []
     flag = True
@@ -403,7 +406,7 @@ def execute_data():
 
     #n_episodes = 10000
 
-    while flag or ln_sub <= 0.1:
+    while flag or ln_sub <= 1:
         
 
 
@@ -494,11 +497,12 @@ def execute_data():
         alpha = agents.alpha
         beta = agents.beta
         print("reward",episodes_reward[-1])
+        print("pr",mixture_ratio)
         if episode % 10 == 0:
             #print(reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
             print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
-        if episode == 200:
+        if episode >= 200:
             flag = False
     calc_log = np.zeros((10, 5))
     calc_nll_log = np.zeros((10, 5))
@@ -619,15 +623,15 @@ def execute_data():
             agents.memory.clear()
             
         #print("---")
-    
 
-    np.save("proposed_edge_auc", calc_log)
-    np.save("proposed_edge_nll", calc_nll_log)
-    np.save("proposed_attr_auc", attr_calc_log)
-    np.save("proposed_attr_nll", attr_calc_nll_log)
+
+    np.save("experiment_data/NIPS/200_5/persona={}/proposed_edge_auc".format(persona_num), calc_log)
+    np.save("experiment_data/NIPS/200_5/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
+    np.save("experiment_data/NIPS/200_5/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
+    np.save("experiment_data/NIPS/200_5/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save("parameter",np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
-    np.save("rw_paramerter",np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
+    np.save("experiment_data/NIPS/200_5/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
+    np.save("experiment_data/NIPS/200_5/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
     np.save("reward",episodes_reward.detach().numpy())
 
   

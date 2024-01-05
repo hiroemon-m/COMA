@@ -32,29 +32,16 @@ def init_mixing_param(K):
 
 
 def calc_gaussian_prob(x, mean, sigma):
-    """ サンプルxが多次元ガウス分布から生成される確率を計算
-    """
-    # 観測データをnumpy化
+    """ サンプルxが多次元ガウス分布から生成される確率を計算 """
     x = np.matrix(x)
-    mean = np.matrix(mean) + 1e-5
-    sigma = np.matrix(sigma) + 1e-5
-    #ガウス分布の1/√2πσ^2の計算
-    #np.linalg.det行列式の計算
-    #.dim次元数
-    a = np.sqrt(np.linalg.det(sigma) * (2*np.pi)**sigma.ndim)
+    mean = np.matrix(mean)
+    sigma = np.matrix(sigma) + np.eye(sigma.shape[0]) * 1e-5  # 数値安定性のための小さなノイズ
+    d = x - mean
+    sigma_inv = np.linalg.inv(sigma)  # 逆行列の計算
+    a = np.sqrt((2 * np.pi) ** sigma.ndim * np.linalg.det(sigma))
+    b = np.exp(-0.5 * (d * sigma_inv * d.T).item())  # .item() はスカラー値を取得するために使用
+    return b / a
 
-    #ガウス分布のexpの中身の計算
-    #print(mean)
-    #print(-0.5*(x-mean)*sigma.I*(x-mean).T)
-    try:
-        b = np.linalg.det((-0.5*(x-mean)*sigma.I*(x-mean).T))
-    except LA.LinAlgError:
-        b = np.linalg.pinv(-0.5*(x-mean)*sigma.I*(x-mean).T)
-        print("error")
-    #print(a)
-    #print(b)
-    #print(np.exp(b)/a)
-    return np.exp(b)/a
 
 def calc_likelihood(X, means, sigmas, pi,K):
     """ データXの現在のパラメタにおける対数尤度を求める
@@ -69,85 +56,40 @@ def calc_likelihood(X, means, sigmas, pi,K):
     return likehood
 
 
-def em_algorism(N,K,X,mean,sigma):
-
-    # 1. パラメタ初期化
-    D = 2  # nb_feature
-    N = N  # nb_sample
-    K = K
-    means = mean
-    sigmas = sigma
-
+def em_algorithm(N, K, X, means, sigmas):
     pi = init_mixing_param(K)
-    print("## Initialization")
-    print("mean: %s" % str(means))
-    print("covariance: %s" % str(sigmas))
-    print("pi: %s" % str(pi))
-    print("\n")
-
-
-    likehood = calc_likelihood(X, means, sigmas, pi,K)
+    likelihood = calc_likelihood(X, means, sigmas, pi, K)
     gamma = np.zeros((N, K))
-    print("--------")
-    print(likehood)
     is_converged = False
     iteration = 0
+
     while not is_converged:
-        print("likehood: %f" % (likehood))
-        # 2. E-Step: 現在のパラメタを使ってgammaを計算
+        # E-Step
         for n in range(N):
-            denominator = 0.0
-            # 分母を計算
-            for j in range(K):
-                denominator += pi[j] * calc_gaussian_prob(X[n], means[j], sigmas[j])
-            # 各kについての負担率を計算
+            denominator = sum(pi[k] * calc_gaussian_prob(X[n], means[k], sigmas[k]) for k in range(K))
             for k in range(K):
                 gamma[n, k] = pi[k] * calc_gaussian_prob(X[n], means[k], sigmas[k]) / denominator
-        print("a")
-        # 3. M-Step: 現在の負担率を使ってパラメタを計算
-        #gamma(N,K)を行方向に加算 (N,K)→(1,K)NK
-        #gamma[n][k]負担率 Nk
+
+        # M-Step
         Nks = gamma.sum(axis=0)
-        #print("gamma",gamma)
-        #print("NKs",Nks)
         for k in range(K):
-            # meansを再計算
-            means[k] = np.array([0.0, 0.0])
-            for n in range(N):
-                means[k] += gamma[n][k] * X[n]
-            means[k] /= Nks[k]
-
-            # sigmasを再計算
-            sigmas[k] = np.array([[0.0, 0.0], [0.0, 0.0]])
-            for n in range(N):
-                _diff_vector = X[n] - means[k]
-                sigmas[k] += gamma[n][k] * _diff_vector.reshape(2, 1) * _diff_vector.reshape(1, 2)
-
-            sigmas[k] /= Nks[k]
-
-            # piを再計算
+            means[k] = np.sum(gamma[:, k, np.newaxis] * X, axis=0) / Nks[k]
+            diff = X - means[k]
+            sigmas[k] = np.dot(gamma[:, k] * diff.T, diff) / Nks[k]
             pi[k] = Nks[k] / N
 
-        print("b")
-        # 4. 収束判定
-        iteration +=1
-        new_likehood = calc_likelihood(X, means, sigmas, pi,K)
-        print(round(likehood, 2))
-        print(round(new_likehood,2))
-
-
-
-        if  (likehood - 0.1 <= new_likehood) and (new_likehood <= likehood + 0.1):
-                is_converged = True
-                print("%f vs %f" % (new_likehood, likehood))
-        print("likehood",likehood)
-
-
-        if iteration >= 20:
+        # 収束判定
+        new_likelihood = calc_likelihood(X, means, sigmas, pi, K)
+        if abs(new_likelihood - likelihood) < 0.01 or iteration >= 20:
             is_converged = True
-        likehood = new_likehood
+        print(likelihood)
+        print(new_likelihood)
+        likelihood = new_likelihood
+        iteration += 1
 
-    return gamma,means
+
+    return gamma, means
+
 
 
 def tolist(data) -> None:
@@ -181,7 +123,7 @@ if __name__ == "__main__":
     dblp_array = np.array([data_norm["alpha"].tolist(),
                       data_norm["beta"].tolist()])
     dblp_array = dblp_array.T
-    num = 4
+    num = 12
     pred = KMeans(n_clusters=num).fit_predict(dblp_array)
     dblp_kmean = data_norm
     dblp_kmean["cluster_id"] = pred
@@ -221,7 +163,9 @@ if __name__ == "__main__":
     means = []
     for i in mean:
         means.append(np.array(i))
-    gamma,means = em_algorism(32,num,em,means,sigma)
+    gamma,means = em_algorithm(32,num,em,means,sigma)
+    print(gamma)
+    print(np.argmax(gamma,axis=1))
     np.argmax(gamma,axis=1)
     np.save(
     "gamma{}".format(num), # データを保存するファイル名

@@ -46,8 +46,10 @@ class Actor(nn.Module):
             feat_prob = torch.tanh(feat)
             x = torch.mm(feat, feat.t())
             x = x.div(self.T[i])
-            x = torch.clamp(x, max=79)
-            x = x.exp().mul(self.e[i])
+            x = torch.clamp(x, max=75)
+            #x = torch.clamp(x, max=73)
+            #x = torch.expm1(x).mul(self.e[i])
+            x=x.exp().mul(self.e[i])
             min_values = torch.min(x, dim=0).values
             max_values = torch.max(x, dim=0).values
             x = (x - min_values) / ((max_values - min_values) + 1e-4)
@@ -108,12 +110,21 @@ class Actor(nn.Module):
             #print("max",torch.max(x))
             #print(self.T)
             #print(x)
-            x = x.div(self.T[i])
-            print("max_x",torch.max(x))
-            x = torch.clamp(x, max=70)
-            print("clamp_x",torch.max(x))
-            x = x.exp().mul(self.e[i])
-            print("x",torch.isnan(x).sum())
+            x = x.div(self.T[i])+1e-4
+            #print("max_x",torch.max(x))
+            #print("x",torch.isnan(x).sum())
+            x = torch.clamp(x, max=75)
+            #x = torch.clamp(x, max=75)
+            #print("clamp_x",torch.max(x))
+            x = torch.expm1(x)
+            #print(torch.max(x))
+            x = x.mul(self.e[i])
+            x = torch.relu(x)
+            #print(torch.max(x))
+
+            #x = x.exp().mul(self.e[i])
+            #print(x)
+            #print("x",torch.isnan(x).sum())
 
 
             min_values = torch.min(x, dim=0).values
