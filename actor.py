@@ -117,10 +117,10 @@ class Actor(nn.Module):
             #x = torch.clamp(x, max=75)
             #print("clamp_x",torch.max(x))
             x = torch.expm1(x)
-            #print(torch.max(x))
+            print(torch.max(x))
             x = x.mul(self.e[i])
             x = torch.relu(x)
-            #print(torch.max(x))
+            print(torch.max(x))
 
             #x = x.exp().mul(self.e[i])
             #print(x)

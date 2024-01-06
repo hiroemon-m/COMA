@@ -123,7 +123,8 @@ if __name__ == "__main__":
     dblp_array = np.array([data_norm["alpha"].tolist(),
                       data_norm["beta"].tolist()])
     dblp_array = dblp_array.T
-    num = 12
+    num = 3
+    N = 500
     pred = KMeans(n_clusters=num).fit_predict(dblp_array)
     dblp_kmean = data_norm
     dblp_kmean["cluster_id"] = pred
@@ -163,7 +164,7 @@ if __name__ == "__main__":
     means = []
     for i in mean:
         means.append(np.array(i))
-    gamma,means = em_algorithm(32,num,em,means,sigma)
+    gamma,means = em_algorithm(N,num,em,means,sigma)
     print(gamma)
     print(np.argmax(gamma,axis=1))
     np.argmax(gamma,axis=1)

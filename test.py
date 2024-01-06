@@ -10,6 +10,7 @@ from sklearn.metrics import roc_auc_score
 
 
 
+
 # First Party Library
 import csv
 import config
@@ -22,6 +23,7 @@ from actor import Actor
 from critic import Critic
 
 device = config.select_device
+print(device)
 
 class COMA:
     def __init__(self, obs,agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik,story_count):
@@ -171,8 +173,15 @@ class COMA:
                 for k in range(len(actions_taken[j])):
                 
                     Q_value =Q_value + Q[j][actions_taken[j][k]]
+                
                 Q_taken[j]=Q_value
-      
+            
+            
+            print("del Q",Q.__sizeof__())
+            print("agent",i)
+            del Q
+            del Q_value
+            gc.collect()
             r = torch.empty(len(reward[:, i]))
 
             for t in range(len(reward[:, i])):
@@ -190,9 +199,13 @@ class COMA:
 
 
             critic_loss = critic_loss + torch.mean((r - Q_taken)**2)
-           
+        del log_pi,log_pi_mul,r,Q_taken_target,Q_target,advantage,advantage_re,input_critic,action_taken
+        gc.collect()
+        print("critic_optimize")
         critic_optimizer.zero_grad()
+        print("done critic_oerograd")
         critic_loss.backward(retain_graph=True)
+        print("done critic_backward")
         torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1)
         #print("a&b_grad",self.obs.alpha,self.obs.beta)
 
@@ -208,8 +221,10 @@ class COMA:
             #torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 5)
 
 
-
+        print("actor_optimize")
         actor_optimizer.zero_grad() 
+        print("done critic_zerograd")
+
         actor_loss.backward()
 
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1)
@@ -264,18 +279,18 @@ class COMA:
         batch_size = len(edges)
         ids = (torch.ones(batch_size) * agent_id).view(-1, 1)
         #5->10のデータの整形
-        edges_i = torch.empty(self.story_count,32)
+        edges_i = torch.empty(self.story_count,500)
         edges_i = edges[:,agent_id]
         features_i = torch.empty(self.story_count,features.shape[2])
         features_i = features[:,agent_id]
-        actions_i = torch.zeros(1,992)
+        actions_i = torch.zeros(1,249500)
         
         #iは時間
         #5->10までの区間を予測したいので5
         for i in range(self.story_count):
             if agent_id == 0:
                 action_i = actions[i,agent_id+1:].view(1,-1)
-            elif agent_id == 32:
+            elif agent_id == 500:
                 action_i = actions[i,:agent_id].view(1,-1)
             else:
                 action_i = torch.cat(tensors=(actions[i,:agent_id].view(1,-1),actions[i,agent_id+1:].view(1,-1)),dim=1)
@@ -288,10 +303,18 @@ class COMA:
         actions_i = actions_i[1:]
         #print(actions_i[0])
         input_critic= torch.cat(tensors=(ids,edges_flatten),dim=1)
+        print("ic",input_critic.size())
         input_critic= torch.cat(tensors=(input_critic,actions_i),dim=1)
+        print("ic",input_critic.size())
         input_critic= torch.cat(tensors=(input_critic,features_flatten),dim=1)
+        print("ic",input_critic.size())
         input_critic= torch.cat(tensors=(input_critic,features_i),dim=1)
+        print("ic",input_critic.size())
+
         input_critic = input_critic.to(torch.float32)
+        print("ef",edges_flatten.size())
+        print(actions_i.size())
+
 
         return input_critic
     
@@ -338,7 +361,7 @@ def execute_data():
     #alpha,betaの読み込み
        #ペルソナの取り出し
     #ペルソナの数[3,4,5,6,8,12]
-    persona_num =  6
+    persona_num =  3
     path = "gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
@@ -355,13 +378,13 @@ def execute_data():
     print("means",means)
     print("alpha",alpha)
     print("beta",beta)
-    data_size = 32
+    data_size = 500
     LEARNED_TIME = 4
     GENERATE_TIME = 5
     TOTAL_TIME = 10
     load_data = init_real_data()
     agent_num = len(load_data.adj[LEARNED_TIME])
-    input_size = 81580
+    input_size = 2430355
     action_dim = 32
     gamma = 0.90
     lr_a = 0.1
@@ -394,8 +417,8 @@ def execute_data():
     N = len(alpha)
     print(w)
 
-    episodes = 200
-    story_count = 20
+    episodes = 400
+    story_count = 5
     ln = 0
     sub_ln = []
     flag = True
@@ -483,6 +506,7 @@ def execute_data():
        
         #print("train",episode)
         agents.train()
+        print("episodecount",episode)
         T = agents.actor.T
         e = agents.actor.e
         r = agents.actor.r
