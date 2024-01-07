@@ -7,15 +7,14 @@ import torch
 from torch_geometric.nn import GCNConv
 
 
-class Critic(torch.nn.Module):
+class CriticBefore(torch.nn.Module):
     def __init__(self, num_features, hidden_channels, num_classes):
-        super(Critic, self).__init__()
+        super(CriticBefore, self).__init__()
         self.conv1 = GCNConv(num_features, hidden_channels)
         self.conv2 = GCNConv(hidden_channels, num_classes)
 
     def forward(self, edge,feature):
-        x = feature
-        edge_index = edge
+        x, edge_index = feature, edge
 
         x = self.conv1(x, edge_index)
         x = F.relu(x)
@@ -23,3 +22,4 @@ class Critic(torch.nn.Module):
         x = self.conv2(x, edge_index)
 
         return x
+

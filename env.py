@@ -17,9 +17,12 @@ class Env:
     def __init__(self, agent_num,edges, feature, temper,alpha,beta,persona) -> None:
         self.agent_num = agent_num
         self.edges = edges
+        #隣接行列をエッジリストへ変換
+        self.edge_index = edges.nonzero(as_tuple=False).t().contiguous()
         self.feature = feature.to(device)
-        #self.alpha = alpha
-        #self.beta = beta
+        #単位行列作成
+        #全部1の行列のほうがいいかも〜
+        self.identity = torch.eye(agent_num)
         self.alpha = alpha.clone().detach().requires_grad_(True)
         
         self.beta = beta.clone().detach().requires_grad_(True)
