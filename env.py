@@ -18,7 +18,7 @@ class Env:
         self.agent_num = agent_num
         self.edges = edges
         #隣接行列をエッジリストへ変換
-        self.edge_index = edges.nonzero(as_tuple=False).t().contiguous()
+        self.edge_index = edges
         self.feature = feature.to(device)
         #単位行列作成
         #全部1の行列のほうがいいかも〜

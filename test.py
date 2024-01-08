@@ -81,46 +81,48 @@ class COMA:
 
         return feat,action
     
-    def create_edge_features(self,node_features, edge_index,i):
+    def create_edge_features(self,node_features, edge_index):
     # エッジのノード特徴を取得
-        #
-        #反証行動の中から特定のagentに関する接続情報を取得
-        agent_edge_index = (edge_index==i).nonzero(as_tuple=False).t().contiguous()
-        #print(edge_index[0][edge_index[0]==i])
-        #print(edge_index[1][edge_index[0]==i])
-        #一つ目のtenosr 0は元のtenosr1行目(to) 1は2行目(go) 行番号
-        #2つ目のtenosr 列番号
-        #node_featuresは３２なのでedge_indexでリンク元リンク先の特徴をとる
-        #edge_indexは0起点で相手がわかるので
-        #print(edge_index[0][edge_index[0]==i])
+        tensor_edge_features = torch.zeros(self.agent_num,self.agent_num)
+        for i in range(self.agent_num):
+            #反証行動の中から特定のagentに関する接続情報を取得
+            agent_edge_index = (edge_index==i).nonzero(as_tuple=False).t().contiguous()
+            #print(edge_index[0][edge_index[0]==i])
+            #print(edge_index[1][edge_index[0]==i])
+            #一つ目のtenosr 0は元のtenosr1行目(to) 1は2行目(go) 行番号
+            #2つ目のtenosr 列番号
+            #node_featuresは３２なのでedge_indexでリンク元リンク先の特徴をとる
+            #edge_indexは0起点で相手がわかるので
+            #print(edge_index[0][edge_index[0]==i])
 
-        #edge_features = node_features[agent_edge_index[0][agent_edge_index[0]==0]] + node_features[edge_index[1][edge_index[0]==i]]
-        edge_features = node_features[edge_index[0][edge_index[0]==i]] + node_features[edge_index[1][edge_index[0]==i]]
-        #edge_features = torch.cat((agent_edge_index[0][agent_edge_index[0]==0].view(-1,1),edge_index[1][edge_index[0]==i].view(-1,1),edge_features),dim=1)
-        #これでも良いがPiが32,20,32とかいう訳のわからん形状
-        ########
-        #tensor_edge_features = torch.zeros(32,32)
-        #tensor_edge_features.index_put_((agent_edge_index[0][agent_edge_index[0]==0],edge_index[1][edge_index[0]==i]),edge_features.view(1,-1).squeeze())
-        ########
-        tensor_edge_features = torch.zeros(32)
-        input_edge_feature = edge_features.detach().clone().view(1,-1).squeeze()
-        tensor_edge_features[edge_index[1][edge_index[0]==i]]= input_edge_feature
+            #edge_features = node_features[agent_edge_index[0][agent_edge_index[0]==0]] + node_features[edge_index[1][edge_index[0]==i]]
+            edge_features = node_features[edge_index[0][edge_index[0]==i]] + node_features[edge_index[1][edge_index[0]==i]]
+            #edge_features = torch.cat((agent_edge_index[0][agent_edge_index[0]==0].view(-1,1),edge_index[1][edge_index[0]==i].view(-1,1),edge_features),dim=1)
+            #これでも良いがPiが32,20,32とかいう訳のわからん形状
+            ########
+            #tensor_edge_features = torch.zeros(32,32)
+            #tensor_edge_features.index_put_((agent_edge_index[0][agent_edge_index[0]==0],edge_index[1][edge_index[0]==i]),edge_features.view(1,-1).squeeze())
+            ########
+            
+            input_edge_feature = edge_features.detach().clone().view(1,-1).squeeze()
+            tensor_edge_features[i][edge_index[1][edge_index[0]==i]]= input_edge_feature
 
         return tensor_edge_features
     
-    def create_taken_edge_features(self,node_features, edge_index,i):
+    def create_taken_edge_features(self,node_features, edge_index):
     # エッジのノード特徴を取得
      
         #agent_edge_index = (edge_index==i).nonzero(as_tuple=False).t().contiguous()
+        tensor_edge_features_taken = torch.zeros(self.agent_num,self.agent_num)
+        for i in range(self.agent_num):
         
+            edge_features_taken = node_features[edge_index[0][edge_index[0]==i]] + node_features[edge_index[1][edge_index[0]==i]]
+            #print(edge_features_taken)
 
-        
-        edge_features_taken = node_features[edge_index[0][edge_index[0]==i]] + node_features[edge_index[1][edge_index[0]==i]]
-        #print(edge_features_taken)
-        tensor_edge_features_taken = torch.zeros(32)
-        input_edge_feature_taken = edge_features_taken.detach().clone().view(1,-1).squeeze()
-        tensor_edge_features_taken[edge_index[1][edge_index[0]==i]]= input_edge_feature_taken
-        #print(tensor_edge_features_taken)
+            input_edge_feature_taken = edge_features_taken.detach().clone().view(1,-1).squeeze()
+            tensor_edge_features_taken[i][edge_index[1][edge_index[0]==i]]= input_edge_feature_taken
+            #print(tensor_edge_features_taken)
+
         return tensor_edge_features_taken
 
     
@@ -142,44 +144,44 @@ class COMA:
         #Q値を保管するリスト 
         #このtensorには実際に行っていない行動に対しての評価値が欲しい
         #つまり,エッジの回帰？
-        real_Q_target = torch.empty(32,self.story_count,32)
-        real_Q_taken = torch.empty(32,self.story_count,32)
+        real_Q_target = torch.empty(self.story_count,self.agent_num,self.agent_num)
+        real_Q_taken = torch.empty(self.story_count,self.agent_num,self.agent_num)
 
         #print("エッジ",(observation_edges[0]==0).nonzero(as_tuple=False).t().contiguous()[0])
-        for i in range(self.agent_num):
-            #一つ前の情報を使うので-1->なし
+  
             
-            for t in range(self.story_count):
+        for t in range(self.story_count):
                 #反証行動
                 #反証行動のみ,[32,32]要素0から置き換える
                 #critic_targetは,エッジ生成の評価値が欲しい
-                input_critic = (observation_edges[t]==1).nonzero(as_tuple=False).t().contiguous()
-                input_crtic_target = (observation_edges[t]==0).nonzero(as_tuple=False).t().contiguous()
-                Q = self.critic(input_critic,observation_features[t])
-                Q_target = self.critic_target(input_crtic_target,observation_features[t])
-                #Q_target = Q_target.squeeze() 
+            input_critic = (observation_edges[t]==1).nonzero(as_tuple=False).t().contiguous()
+            input_crtic_target = (observation_edges[t]==0).nonzero(as_tuple=False).t().contiguous()
+            Q = self.critic(input_critic,observation_features[t])
+            Q_target = self.critic_target(input_crtic_target,observation_features[t])
+            #Q_target = Q_target.squeeze() 
                 
-                #反証行動
-                edge_index = (observation_edges[t]==0).nonzero(as_tuple=False).t().contiguous()
-                edge_features = self.create_edge_features(Q_target,edge_index,i)
+            #反証行動
+            edge_index = (observation_edges[t]==0).nonzero(as_tuple=False).t().contiguous()
+            edge_features = self.create_edge_features(Q_target,edge_index)
 
-                #実際に取った行動
-                edge_index_taken = (observation_edges[t]==1).nonzero(as_tuple=False).t().contiguous()
-                edge_features_taken = self.create_taken_edge_features(Q,edge_index_taken,i)
+            #実際に取った行動
+            edge_index_taken = (observation_edges[t]==1).nonzero(as_tuple=False).t().contiguous()
+            edge_features_taken = self.create_taken_edge_features(Q,edge_index_taken)
                 
                 #Q_beforeいらないかも〜
                 #Q_target_before = self.critic_target_before(observation_edges[t].nonzero(as_tuple=False).t().contiguous(),self.obs.identity) 
                 #real_Q_target[t]  = (Q_target + Q_target_before).squeeze()
     
-                real_Q_target[i,t,:]  = edge_features
-                real_Q_taken[i,t,:] = edge_features_taken
+            real_Q_target[t,:,:]  = edge_features
+            real_Q_taken[t,:,:] = edge_features_taken
 
         #反証的ベースライン
         #これで32x20x32を返す
         #baseline = pi * real_Q_target
         #→時間の和をとる
         #32x32で各行はagentaの反証行動の値
-        baseline = torch.sum(pi * real_Q_target,dim=1)
+        pi_new = pi.detach().clone().permute(1,0,2)
+        baseline = torch.sum(pi_new * real_Q_target,dim=1)
         max_indices = []
         Q_taken_target =torch.empty(self.story_count,self.agent_num)
             #Q_taken_li =[]
@@ -191,10 +193,11 @@ class COMA:
 
                 max_indices.append(torch.where(action_taken[j] == 1)[0].tolist())
                 actions_taken = max_indices
-                Q_taken_target[j] = real_Q_taken[i][j]*action_taken[j]
+                Q_taken_target[j] = real_Q_taken[j][i]*action_taken[j]
 
             #利得関数
-            advantage = Q_taken_target - baseline[i]
+  
+            advantage = Q_taken_target - baseline
             #あるagent:iのすべての時間での他のノードととのエッジの生成確率
             #advantage_re = advantage.reshape(self.story_count,1)
             advantage_re = advantage
@@ -215,11 +218,12 @@ class COMA:
                         #Reward + γV(st+1)
                         #print(t, Q_taken_target[t + 1])
                     #reward[:, i][t]はスカラー
-                    r[t] = reward[:, i][t] + self.gamma * torch.sum(real_Q_taken[i][t + 1])
+                    r[t] = reward[:, i][t] + self.gamma * torch.sum(real_Q_taken[t + 1][i])
+     
+            #print(torch.sum(real_Q_taken,dim=1)[i].size())
 
 
-
-            critic_loss = critic_loss + torch.mean((r - torch.sum(real_Q_taken[i]))**2)
+            critic_loss = critic_loss + torch.mean((r - torch.sum(real_Q_taken[:,i,:],dim=1))**2)
         # train critic
         print("i reach here")
         critic_optimizer.zero_grad()
@@ -245,15 +249,15 @@ class COMA:
 
         with torch.no_grad():
            
-            self.actor.T -= 1 * self.actor.T.grad
-            self.actor.e -= 10000 * self.actor.e.grad
-            self.actor.r -= 1 * self.actor.r.grad
-            self.actor.W -= 10 * self.actor.W.grad
+            self.actor.T -= 0.05 * self.actor.T.grad
+            self.actor.e -= 1000000 * self.actor.e.grad
+            self.actor.r -= 0.05 * self.actor.r.grad
+            self.actor.W -= 0.05 * self.actor.W.grad
 
-        print("T_grad",self.actor.T.grad,str(0.0001 * self.actor.T.grad),self.actor.T)
-        print("e_grad",self.actor.e.grad,str(10000 * self.actor.e.grad),self.actor.e)
-        print("r_grad",self.actor.r.grad,str(0.0001 * self.actor.r.grad),self.actor.r)
-        print("w_grad",self.actor.W.grad,str(10 * self.actor.W.grad),self.actor.W)
+        print("T_grad",self.actor.T.grad,self.actor.T)
+        print("e_grad",self.actor.e.grad,self.actor.e)
+        print("r_grad",self.actor.r.grad,self.actor.r)
+        print("w_grad",self.actor.W.grad,self.actor.W)
             
 
 
@@ -290,7 +294,7 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
 
 
     #分子　全ての時間　 あるペルソナに注目
-    rik = torch.empty(32,len(persona[0]))
+    rik = torch.empty(agent_num,len(persona[0]))
 
 
     top = torch.sum(policy_ration,dim = 0)
@@ -314,7 +318,7 @@ def execute_data():
     #alpha,betaの読み込み
        #ペルソナの取り出し
     #ペルソナの数[3,4,5,6,8,12]
-    persona_num =  6
+    persona_num =  32
     path = "gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
@@ -331,14 +335,13 @@ def execute_data():
     print("means",means)
     print("alpha",alpha)
     print("beta",beta)
-    data_size = 32
     LEARNED_TIME = 4
     GENERATE_TIME = 5
     TOTAL_TIME = 10
     load_data = init_real_data()
     agent_num = len(load_data.adj[LEARNED_TIME])
     input_size = 81580
-    action_dim = 32
+    action_dim = 500
     gamma = 0.90
     lr_a = 0.1
     lr_c = 0.005
@@ -369,8 +372,8 @@ def execute_data():
 
     N = len(alpha)
 
-    episodes = 200
-    story_count = 20
+    episodes = 32
+    story_count = 10
     ln = 0
     sub_ln = []
     flag = True
@@ -393,17 +396,19 @@ def execute_data():
         else:
             print(episode)
             print("-------------------------")
-            mixture_ratio = e_step(
-                agent_num=agent_num,
-                load_data=load_data,
-                T=T,
-                e=e,
-                r=r,
-                w=w,
-                persona=persona_ration,
-                step = GENERATE_TIME,
-                base_time=LEARNED_TIME
-                )
+            mixture_ratio = persona_ration
+            #softの時は外す
+            #mixture_ratio = e_step(
+            #    agent_num=agent_num,
+            #    load_data=load_data,
+            #    T=T,
+            #    e=e,
+            #    r=r,
+            #    w=w,
+            #    persona=persona_ration,
+            #    step = GENERATE_TIME,
+            #    base_time=LEARNED_TIME
+            #    )
  
         #personaはじめは均等
         if episode == 0:
@@ -463,7 +468,7 @@ def execute_data():
             #print(reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
             print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
-        if episode >= 200:
+        if episode >= 32:
             flag = False
     calc_log = np.zeros((10, 5))
     calc_nll_log = np.zeros((10, 5))
@@ -588,13 +593,13 @@ def execute_data():
         #print("---")
 
 
-    np.save("experiment_data/NIPS/200_5/persona={}/proposed_edge_auc".format(persona_num), calc_log)
-    np.save("experiment_data/NIPS/200_5/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
-    np.save("experiment_data/NIPS/200_5/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
-    np.save("experiment_data/NIPS/200_5/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
+    np.save("experiment_data/DBLP/k-mean/persona={}/proposed_edge_auc".format(persona_num), calc_log)
+    np.save("experiment_data/DBLP/k-mean/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
+    np.save("experiment_data/DBLP/k-mean/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
+    np.save("experiment_data/DBLP/k-mean/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save("experiment_data/NIPS/200_5/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
-    np.save("experiment_data/NIPS/200_5/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
+    np.save("experiment_data/DBLP/k-mean/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
+    np.save("experiment_data/DBLp/k-mean/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
     np.save("reward",episodes_reward.detach().numpy())
 
   
