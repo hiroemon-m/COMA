@@ -248,7 +248,7 @@ class COMA:
             self.actor.T -= 1 * self.actor.T.grad
             self.actor.e -= 10000 * self.actor.e.grad
             self.actor.r -= 1 * self.actor.r.grad
-            self.actor.W -= 10 * self.actor.W.grad
+            self.actor.W -= 1 * self.actor.W.grad
 
         print("T_grad",self.actor.T.grad,str(0.0001 * self.actor.T.grad),self.actor.T)
         print("e_grad",self.actor.e.grad,str(10000 * self.actor.e.grad),self.actor.e)
@@ -314,7 +314,7 @@ def execute_data():
     #alpha,betaの読み込み
        #ペルソナの取り出し
     #ペルソナの数[3,4,5,6,8,12]
-    persona_num =  6
+    persona_num =  3
     path = "gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
@@ -369,7 +369,7 @@ def execute_data():
 
     N = len(alpha)
 
-    episodes = 200
+    episodes = 32
     story_count = 20
     ln = 0
     sub_ln = []
@@ -393,17 +393,7 @@ def execute_data():
         else:
             print(episode)
             print("-------------------------")
-            mixture_ratio = e_step(
-                agent_num=agent_num,
-                load_data=load_data,
-                T=T,
-                e=e,
-                r=r,
-                w=w,
-                persona=persona_ration,
-                step = GENERATE_TIME,
-                base_time=LEARNED_TIME
-                )
+            mixture_ratio = persona_ration
  
         #personaはじめは均等
         if episode == 0:
@@ -588,16 +578,15 @@ def execute_data():
         #print("---")
 
 
-    np.save("experiment_data/NIPS/200_5/persona={}/proposed_edge_auc".format(persona_num), calc_log)
-    np.save("experiment_data/NIPS/200_5/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
-    np.save("experiment_data/NIPS/200_5/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
-    np.save("experiment_data/NIPS/200_5/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
-    print("t",T,"e",e,"r",r,"w",w)
-    np.save("experiment_data/NIPS/200_5/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
-    np.save("experiment_data/NIPS/200_5/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
-    np.save("reward",episodes_reward.detach().numpy())
 
-  
+    np.save("experiment_data/NIPS/k-mean/persona={}/proposed_edge_auc".format(persona_num), calc_log)
+    np.save("experiment_data/NIPS/k-mean/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
+    np.save("experiment_data/NIPS/k-mean/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
+    np.save("experiment_data/NIPS/k-mean/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
+    print("t",T,"e",e,"r",r,"w",w)
+    np.save("experiment_data/NIPS/k-mean/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
+    np.save("experiment_data/NIPS/k-mean/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
+
 
 
 
