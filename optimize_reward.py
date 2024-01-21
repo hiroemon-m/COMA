@@ -103,6 +103,6 @@ if __name__ == "__main__":
     ).to(device)
     model = Model(alpha, beta)
     optimizer = Optimizer(data.adj, data.feature, model, data_size)
-    for t in range(5):
+    for t in range(4):
         optimizer.optimize(t)
     optimizer.export_param()

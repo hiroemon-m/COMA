@@ -124,7 +124,7 @@ if __name__ == "__main__":
     dblp_array = np.array([data_norm["alpha"].tolist(),
                       data_norm["beta"].tolist()])
     dblp_array = dblp_array.T
-    num = 3
+    num = 4
     N = 32
     pred = KMeans(n_clusters=num).fit_predict(dblp_array)
     dblp_kmean = data_norm

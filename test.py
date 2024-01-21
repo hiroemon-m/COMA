@@ -314,7 +314,7 @@ def execute_data():
     #alpha,betaの読み込み
        #ペルソナの取り出し
     #ペルソナの数[3,4,5,6,8,12]
-    persona_num =  3
+    persona_num =  12
     path = "gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
@@ -332,7 +332,7 @@ def execute_data():
     print("alpha",alpha)
     print("beta",beta)
     data_size = 32
-    LEARNED_TIME = 4
+    LEARNED_TIME = 3
     GENERATE_TIME = 5
     TOTAL_TIME = 10
     load_data = init_real_data()
@@ -579,15 +579,14 @@ def execute_data():
 
 
 
-    np.save("experiment_data/NIPS/k-mean/persona={}/proposed_edge_auc".format(persona_num), calc_log)
-    np.save("experiment_data/NIPS/k-mean/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
-    np.save("experiment_data/NIPS/k-mean/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
-    np.save("experiment_data/NIPS/k-mean/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
+
+    np.save("experiment_data/NIPS/abligation/persona={}/proposed_edge_auc".format(persona_num), calc_log)
+    np.save("experiment_data/NIPS/abligation/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
+    np.save("experiment_data/NIPS/abligation/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
+    np.save("experiment_data/NIPS/abligation/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save("experiment_data/NIPS/k-mean/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
-    np.save("experiment_data/NIPS/k-mean/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
-
-
+    np.save("experiment_data/NIPS/abligation/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
+    np.save("experiment_data/NIPS/abligation/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
 
 
 
