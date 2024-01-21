@@ -249,10 +249,10 @@ class COMA:
 
         with torch.no_grad():
            
-            self.actor.T -= 0.05 * self.actor.T.grad
-            self.actor.e -= 100000 * self.actor.e.grad
-            self.actor.r -= 0.05 * self.actor.r.grad
-            self.actor.W -= 0.05 * self.actor.W.grad
+            self.actor.T -= 0.01 * self.actor.T.grad
+            self.actor.e -= 10000 * self.actor.e.grad
+            self.actor.r -= 0.01 * self.actor.r.grad
+            self.actor.W -= 0.01 * self.actor.W.grad
 
         print("T_grad",self.actor.T.grad,self.actor.T)
         print("e_grad",self.actor.e.grad,self.actor.e)
@@ -318,7 +318,7 @@ def execute_data():
     #alpha,betaの読み込み
        #ペルソナの取り出し
     #ペルソナの数[3,4,5,6,8,12]
-    persona_num =  5
+    persona_num = 16
     path = "gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
@@ -335,7 +335,7 @@ def execute_data():
     print("means",means)
     print("alpha",alpha)
     print("beta",beta)
-    LEARNED_TIME = 4
+    LEARNED_TIME = 3
     GENERATE_TIME = 5
     TOTAL_TIME = 10
     load_data = init_real_data()
@@ -593,14 +593,14 @@ def execute_data():
         #print("---")
 
 
-    np.save("experiment_data/DBLP/200_20/persona={}/proposed_edge_auc".format(persona_num), calc_log)
-    np.save("experiment_data/DBLP/200_20/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
-    np.save("experiment_data/DBLP/200_20/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
-    np.save("experiment_data/DBLP/200_20/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
+    np.save("experiment_data/DBLP/abligation/persona={}/proposed_edge_auc".format(persona_num), calc_log)
+    np.save("experiment_data/DBLP/abligation/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
+    np.save("experiment_data/DBLP/abligation/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
+    np.save("experiment_data/DBLP/abligation/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save("experiment_data/DBLP/200_20/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
-    np.save("experiment_data/DBLp/200_20/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
-    np.save("reward",episodes_reward.detach().numpy())
+    np.save("experiment_data/DBLP/abligation/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
+    np.save("experiment_data/DBLP/abligation/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
+
 
   
 
