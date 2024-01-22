@@ -280,10 +280,10 @@ def execute_data() -> None:
         #print("---")
     
 
-    np.save("proposed_edge_auc", calc_log)
-    np.save("proposed_edge_nll", calc_nll_log)
-    np.save("proposed_attr_auc", attr_calc_log)
-    np.save("proposed_attr_nll", attr_calc_nll_log)
+    np.save("experiment_data/NIPS/abligation/baseline/proposed_edge_auc", calc_log)
+    np.save("experiment_data/NIPS/abligation/baseline/proposed_edge_nll", calc_nll_log)
+    np.save("experiment_data/NIPS/abligation/baseline/proposed_attr_auc", attr_calc_log)
+    np.save("experiment_data/NIPS/abligation/baselineproposed_attr_nll", attr_calc_nll_log)
   
 
 

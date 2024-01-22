@@ -314,7 +314,7 @@ def execute_data():
     #alpha,betaの読み込み
        #ペルソナの取り出し
     #ペルソナの数[3,4,5,6,8,12]
-    persona_num =  12
+    persona_num =  5
     path = "gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
@@ -453,7 +453,7 @@ def execute_data():
             #print(reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
             print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
-        if episode >= 200:
+        if episode >= 100:
             flag = False
     calc_log = np.zeros((10, 5))
     calc_nll_log = np.zeros((10, 5))
