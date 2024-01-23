@@ -123,7 +123,7 @@ if __name__ == "__main__":
     dblp_array = np.array([data_norm["alpha"].tolist(),
                       data_norm["beta"].tolist()])
     dblp_array = dblp_array.T
-    num = 16
+    num = 32
     pred = KMeans(n_clusters=num).fit_predict(dblp_array)
     dblp_kmean = data_norm
     dblp_kmean["cluster_id"] = pred
@@ -169,11 +169,11 @@ if __name__ == "__main__":
     print(np.argmax(gamma,axis=1))
     np.argmax(gamma,axis=1)
     np.save(
-    "gamma{}".format(num), # データを保存するファイル名
+    "gamma/imcomplete/gamma{}".format(num), # データを保存するファイル名
     gamma,  # 配列型オブジェクト（listやnp.array)
     )
     np.save(
-    "means{}".format(num), # データを保存するファイル名
+    "gamma/imcomplete/means{}".format(num), # データを保存するファイル名
     means,  # 配列型オブジェクト（listやnp.array)
     )
     

@@ -249,10 +249,10 @@ class COMA:
 
         with torch.no_grad():
            
-            self.actor.T -= 0.01 * self.actor.T.grad
+            self.actor.T -= 0.1 * self.actor.T.grad
             self.actor.e -= 10000 * self.actor.e.grad
-            self.actor.r -= 0.01 * self.actor.r.grad
-            self.actor.W -= 0.01 * self.actor.W.grad
+            self.actor.r -= 0.1 * self.actor.r.grad
+            self.actor.W -= 0.1 * self.actor.W.grad
 
         print("T_grad",self.actor.T.grad,self.actor.T)
         print("e_grad",self.actor.e.grad,self.actor.e)
@@ -468,7 +468,7 @@ def execute_data():
             #print(reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
             print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
-        if episode >= 200:
+        if episode >= 50:
             flag = False
     calc_log = np.zeros((10, 5))
     calc_nll_log = np.zeros((10, 5))

@@ -61,13 +61,11 @@ class Optimizer:
         self.optimizer.step()
         
         #グラフデータの可視化
-        #--------------
-        graph_data = self.edges[t].numpy()
-        np.save('DBLP_graph_data={}.npy'.format(str(t)), graph_data)
-        #--------------
+       
+
 
     def export_param(self):
-        with open("model.param.data.fast", "w") as f:
+        with open("gamma/complete/model.param.data.fast", "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
 
@@ -103,6 +101,6 @@ if __name__ == "__main__":
     ).to(device)
     model = Model(alpha, beta)
     optimizer = Optimizer(data.adj, data.feature, model, data_size)
-    for t in range(4):
+    for t in range(5):
         optimizer.optimize(t)
     optimizer.export_param()

@@ -110,7 +110,7 @@ def tolist(data) -> None:
 
 
 if __name__ == "__main__": 
-    path = "model.param.data.fast"
+    path = "gamma/imcomplete/model.param.data.fast"
     dblp_alpha,dblp_beta = tolist(path)
     data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta})
     
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     dblp_array = np.array([data_norm["alpha"].tolist(),
                       data_norm["beta"].tolist()])
     dblp_array = dblp_array.T
-    num = 32
+    num = 16
     N = 500
     pred = KMeans(n_clusters=num).fit_predict(dblp_array)
     dblp_kmean = data_norm
@@ -149,11 +149,11 @@ if __name__ == "__main__":
     print(means)
 
     np.save(
-    "gamma{}".format(num), # データを保存するファイル名
+    "gamma/imcomplete/gamma{}".format(num), # データを保存するファイル名
     persona_tnsor,  # 配列型オブジェクト（listやnp.array)
     )
     np.save(
-    "means{}".format(num), # データを保存するファイル名
+    "gamma/imcomplete/means{}".format(num), # データを保存するファイル名
     means,  # 配列型オブジェクト（listやnp.array)
     )
     
