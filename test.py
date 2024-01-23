@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
-
+import optuna
 
 
 
@@ -247,8 +247,8 @@ class COMA:
            
             self.actor.T -= 1 * self.actor.T.grad
             self.actor.e -= 10000 * self.actor.e.grad
-            self.actor.r -= 1 * self.actor.r.grad
-            self.actor.W -= 1 * self.actor.W.grad
+            self.actor.r -= 0.08 * self.actor.r.grad
+            self.actor.W -= 0.08 * self.actor.W.grad
 
         print("T_grad",self.actor.T.grad,str(0.0001 * self.actor.T.grad),self.actor.T)
         print("e_grad",self.actor.e.grad,str(10000 * self.actor.e.grad),self.actor.e)
@@ -309,43 +309,43 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
 
 
 def execute_data():
-    ##デバッグ用
-    torch.autograd.set_detect_anomaly(True)
-    #alpha,betaの読み込み
-       #ペルソナの取り出し
-    #ペルソナの数[3,4,5,6,8,12]
-    persona_num =  5
+
+    #ペルソナ数の設定:ペルソナの数[3,4,5,6,8,12]
+    persona_num =  12
     path = "gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
     persona_ration = torch.from_numpy(persona_ration).to(device)
 
 
-    #print(persona_ration)
+    #テストデータの入力
+    LEARNED_TIME = 4
+    #生成したい時間の範囲
+    GENERATE_TIME = 5
+    #全体の時間の範囲
+    TOTAL_TIME = 10
+
+    #データのロード
+    load_data = init_real_data()
     path = "means{}.npy".format(int(persona_num))
     means = np.load(path)
     means = means.astype("float32")
-    means = torch.from_numpy(means).to(device)
-    alpha = means[:,0]
-    beta = means[:,1]
-    print("means",means)
-    print("alpha",alpha)
-    print("beta",beta)
-    data_size = 32
-    LEARNED_TIME = 3
-    GENERATE_TIME = 5
-    TOTAL_TIME = 10
-    load_data = init_real_data()
+    #学習についての諸設定
     agent_num = len(load_data.adj[LEARNED_TIME])
     input_size = 81580
     action_dim = 32
+
+
+
+    #パラメータの初期値の設定
+    means = torch.from_numpy(means).to(device)
+    alpha = means[:,0]
+    beta = means[:,1]
     gamma = 0.90
     lr_a = 0.1
     lr_c = 0.005
-    target_update_steps = 8
-    alpha = alpha
-
-    beta = beta
+    target_update_steps = 10
+ 
     T = np.array(
         [1.0 for i in range(persona_num)],
         dtype=np.float32,
@@ -580,13 +580,13 @@ def execute_data():
 
 
 
-    np.save("experiment_data/NIPS/abligation/persona={}/proposed_edge_auc".format(persona_num), calc_log)
-    np.save("experiment_data/NIPS/abligation/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
-    np.save("experiment_data/NIPS/abligation/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
-    np.save("experiment_data/NIPS/abligation/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
+    np.save("experiment_data/NIPS/200_20/persona={}/proposed_edge_auc".format(persona_num), calc_log)
+    np.save("experiment_data/NIPS/200_20/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
+    np.save("experiment_data/NIPS/200_20/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
+    np.save("experiment_data/NIPS/200_20/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save("experiment_data/NIPS/abligation/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
-    np.save("experiment_data/NIPS/abligation/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
+    np.save("experiment_data/NIPS/200_20/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
+    np.save("experiment_data/NIPS/200_20/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
 
 
 

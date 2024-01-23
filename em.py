@@ -168,11 +168,12 @@ if __name__ == "__main__":
     print(np.argmax(gamma,axis=1))
     np.argmax(gamma,axis=1)
     np.save(
-    "gamma{}".format(num), # データを保存するファイル名
+    "gamma/imcomplete/gamma{}".format(num), # データを保存するファイル名
     gamma,  # 配列型オブジェクト（listやnp.array)
     )
+    
     np.save(
-    "means{}".format(num), # データを保存するファイル名
+    "gamma/imcomplete/means{}".format(num), # データを保存するファイル名
     means,  # 配列型オブジェクト（listやnp.array)
     )
     

@@ -63,8 +63,10 @@ class Env:
     def step(self,feature,action):
         next_mat = action
         self.edges = next_mat
-        next_feature = feature
-        self.feature = next_feature
+        self.feature = feature
+        norm = self.feature.norm(dim=1)[:, None] + 1e-8
+        self.feature = self.feature.div(norm)
+        
         self.feature_t = self.feature.t()
         dot_product = torch.mm(self.feature, self.feature_t).to(device)
         sim = torch.mul(self.edges,dot_product).sum(1)

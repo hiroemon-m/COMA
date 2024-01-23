@@ -85,6 +85,7 @@ class Actor(nn.Module):
         #print(self.persona)
         edges = (edges > 0).float().to(device)
         probability = 0
+        next_feat = 0
         for i in range(len(self.persona[0])):
  
             #隣接ノードと自分の特徴量を集約する
@@ -98,6 +99,7 @@ class Actor(nn.Module):
 
             r = r + 1e-8
             feat = r * attributes + tmp_tensor * (1 - r)
+            next_feat += feat
             #print("feat",feat)
             feat_prob = torch.tanh(feat)
 
@@ -141,9 +143,11 @@ class Actor(nn.Module):
             #print(int(i),x)
             probability += x
         #print(probability)
+            
+        
    
 
-        return probability, feat, feat_prob
+        return probability, next_feat, feat_prob
 
         # エッジの存在関数
         # x = torch.sigmoid(x)
