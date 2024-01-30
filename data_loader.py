@@ -95,11 +95,8 @@ class attr_graph_dynamic_spmat_DBLP:
             self.G_list.append(G)
             self.Gmat_list.append(G_matrix)
             self.Gtensor_list.append(spmat2tensor(G_matrix))
-           
-  
-        print(A.edges())
-        print(type(G_matrix[0]))
-        print(G)
+
+      
 
 
 class attr_graph_dynamic_spmat_NIPS:
@@ -152,9 +149,7 @@ class attr_graph_dynamic_spmat_NIPS:
             self.Gmat_list.append(G_matrix)
             self.Gtensor_list.append(spmat2tensor(G_matrix))
             
-        print(A.edges())
-        print(G_matrix)
-        print(G)
+    
         #print(self.Gtensor_list)
 
 

@@ -17,14 +17,16 @@ class LoadDataset:
     feature = []
 
     def __init__(self, adj, feature):
+
         self.adj = adj
         self.feature = feature
 
 
 def init_real_data() -> LoadDataset:
+    input_graph = attr_graph_dynamic_spmat_NIPS(T=TOTAL_TIME)
     adj = input_graph.Gmat_list
     feature = input_graph.Amat_list
-
+ 
     for t in range(input_graph.T):
         adj[t] = adj[t]
         _ = spmat2sptensor(adj[t])
