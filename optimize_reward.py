@@ -100,6 +100,29 @@ if __name__ == "__main__":
         ),
     ).to(device)
     model = Model(alpha, beta)
+    i = 8
+    #あるノードにi関する情報を取り除く
+    #list[tensor]のキモい構造なので
+    #for n in range(5):
+        #print(data.adj[n][i].sum())
+        #print(data.feature[n][i].sum())
+        #data.adj[n][i,:] = 0
+        #data.adj[n][:,i] = 0
+        #data.feature[n][i][:] = 0
+        #print(data.adj[n][i].sum())
+        #print(data.feature[n][i].sum())
+
+   
+
+
+    data.adj[4][i,:] = 0
+    data.adj[4][:,i] = 0
+    data.feature[4][i][:] = 0
+
+
+
+
+
     optimizer = Optimizer(data.adj, data.feature, model, data_size)
     for t in range(5):
         optimizer.optimize(t)
