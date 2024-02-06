@@ -62,9 +62,9 @@ class Optimizer:
         
 
 
-    def export_param(self,k):
+    def export_param(self,skiptime,k,persona):
 
-        with open("experiment_data/NIPS/200_20/imcomplete/drop={}/model.param.data.fast".format(k), "w") as f:
+        with open("experiment_data/NIPS/200_20/incomplete/t={}/drop={}/persona={}/model.param.data.fast".format(skiptime,k,persona), "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
 
@@ -78,35 +78,38 @@ class Optimizer:
 
 
 if __name__ == "__main__":
-    for k in range(32):
-        data = init_real_data()
+    for skiptime in range(4):
+        skiptime +=1
+        for k in range(32):
+            data = init_real_data()
 
-        data_size = len(data.adj[0])
+            data_size = len(data.adj[0])
 
-        alpha = torch.from_numpy(
-            np.array(
-                [1.0 for i in range(data_size)],
-                dtype=np.float32,
-            ),
-        ).to(device)
+            alpha = torch.from_numpy(
+                np.array(
+                    [1.0 for i in range(data_size)],
+                    dtype=np.float32,
+                ),
+            ).to(device)
 
-        beta = torch.from_numpy(
-            np.array(
-                [1.0 for i in range(data_size)],
-                dtype=np.float32,
-            ),
-        ).to(device)
-        model = Model(alpha, beta)
+            beta = torch.from_numpy(
+                np.array(
+                    [1.0 for i in range(data_size)],
+                    dtype=np.float32,
+                ),
+            ).to(device)
+            model = Model(alpha, beta)
 
-        
-        #あるノードにi関する情報を取り除く
-        #list[tensor]のキモい構造なので
-        data.adj[4][k,:] = 0
-        data.adj[4][:,k] = 0
-        #data.feature[4][i][:] = 0
-        
-        
-        optimizer = Optimizer(data.adj, data.feature, model, data_size)
-        for t in range(5):
-            optimizer.optimize(t)
-        optimizer.export_param(k)
+
+            persona = 5
+            #あるノードにi関する情報を取り除く
+            #list[tensor]のキモい構造なので
+            data.adj[skiptime][k,:] = 0
+            data.adj[skiptime][:,k] = 0
+            #data.feature[4][i][:] = 0
+            
+            
+            optimizer = Optimizer(data.adj, data.feature, model, data_size)
+            for t in range(5):
+                optimizer.optimize(t)
+            optimizer.export_param(skiptime,k,persona)

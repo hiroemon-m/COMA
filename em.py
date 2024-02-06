@@ -108,7 +108,7 @@ def tolist(data) -> None:
 
 
 
-def excecute(num,drop):
+def excecute(skiptime,num,drop):
     path = "model.param.data.fast"
     dblp_alpha,dblp_beta = tolist(path)
     data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta})
@@ -169,20 +169,21 @@ def excecute(num,drop):
     print(np.argmax(gamma,axis=1))
     np.argmax(gamma,axis=1)
     np.save(
-    "experiment_data/NIPS/200_20/imcomplete/drop={}/persona={}/gamma{}".format(drop,num,num), # データを保存するファイル名
+    "experiment_data/NIPS/200_20/incomplete/t={}/drop={}/persona={}/gamma{}".format(skiptime,drop,num,num), # データを保存するファイル名
     gamma,  # 配列型オブジェクト（listやnp.array)
     )
     
     np.save(
-    "experiment_data/NIPS/200_20/imcomplete/drop={}/persona={}/means{}".format(drop,num,num), # データを保存するファイル名
+    "experiment_data/NIPS/200_20/incomplete/t={}/drop={}/persona={}/means{}".format(skiptime,drop,num,num), # データを保存するファイル名
     means,  # 配列型オブジェクト（listやnp.array)
     )
     
 
 if __name__ == "__main__": 
-    for i in range(32):
-        print(i)
-        persona=5
-        drop=i
-        excecute(persona,drop)
+    for skiptime in range(1,5):
+        for i in range(32):
+            print(i)
+            persona=5
+            drop=i
+            excecute(skiptime,persona,drop)
     
