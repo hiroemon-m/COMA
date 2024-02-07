@@ -13,7 +13,7 @@ from tqdm import tqdm
 import config
 from init_real_data import init_real_data
 
-device = config.select_device
+device = torch.device('mps')
 
 
 class Interest(IntEnum):
@@ -62,9 +62,9 @@ class Optimizer:
         
 
 
-    def export_param(self,skiptime,k,persona):
+    def export_param(self,skiptime,p,k):
 
-        with open("experiment_data/NIPS/200_20/incomplete/t={}/drop={}/persona={}/model.param.data.fast".format(skiptime,k,persona), "w") as f:
+        with open("experiment_data/DBLP/incomplete/t={}/percent={}/attempt={}/model.param.data.fast".format(skiptime,p,k), "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
 
@@ -78,38 +78,44 @@ class Optimizer:
 
 
 if __name__ == "__main__":
-    for skiptime in range(4):
-        skiptime +=1
-        for k in range(32):
-            data = init_real_data()
+    p=50
 
-            data_size = len(data.adj[0])
+    skiptime = 5
+    for k in range(15):
 
-            alpha = torch.from_numpy(
-                np.array(
+
+        data = init_real_data()
+
+        data_size = len(data.adj[0])
+
+        alpha = torch.from_numpy(
+        np.array(
                     [1.0 for i in range(data_size)],
                     dtype=np.float32,
                 ),
             ).to(device)
 
-            beta = torch.from_numpy(
+        beta = torch.from_numpy(
                 np.array(
                     [1.0 for i in range(data_size)],
                     dtype=np.float32,
                 ),
             ).to(device)
-            model = Model(alpha, beta)
+        model = Model(alpha, beta)
 
 
-            persona = 5
+        persona = 5
             #あるノードにi関する情報を取り除く
             #list[tensor]のキモい構造なので
-            data.adj[skiptime][k,:] = 0
-            data.adj[skiptime][:,k] = 0
-            #data.feature[4][i][:] = 0
+        skipnum = int(500*(p/100))
+        randomnum = random.sample(range(0, 500), skipnum)
+        for r in randomnum:
+            data.adj[skiptime][r,:] = 0
+            data.adj[skiptime][:,r] = 0
+            #data.feature[4][r][:] = 0
             
             
-            optimizer = Optimizer(data.adj, data.feature, model, data_size)
-            for t in range(5):
-                optimizer.optimize(t)
-            optimizer.export_param(skiptime,k,persona)
+        optimizer = Optimizer(data.adj, data.feature, model, data_size)
+        for t in range(5):
+            optimizer.optimize(t)
+        optimizer.export_param(skiptime,p,k)

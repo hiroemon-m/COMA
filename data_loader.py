@@ -11,7 +11,7 @@ np.set_printoptions(threshold=np.inf)
 #np.set_printoptions(threshold=)出力の数がthresholdの値より多い場合は省略される
 #np.infとすることで省略しない
 
-device = config.select_device
+device = torch.device('mps')
 
 
 def spmat2sptensor(sparse_mat):

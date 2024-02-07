@@ -10,7 +10,7 @@ import torch
 # First Party Library
 import config
 
-device = config.select_device
+device = torch.device('mps')
 
 
 class Env:

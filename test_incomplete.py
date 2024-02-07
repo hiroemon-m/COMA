@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
 import optuna
+import random
 
 
 
@@ -22,7 +23,7 @@ from actor import Actor
 from critic import Critic
 from beforecritic import CriticBefore
 
-device = config.select_device
+device = torch.device('mps')
 
 class COMA:
     def __init__(self, obs,agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik,story_count):
@@ -102,7 +103,7 @@ class COMA:
         #tensor_edge_features = torch.zeros(32,32)
         #tensor_edge_features.index_put_((agent_edge_index[0][agent_edge_index[0]==0],edge_index[1][edge_index[0]==i]),edge_features.view(1,-1).squeeze())
         ########
-        tensor_edge_features = torch.zeros(32)
+        tensor_edge_features = torch.zeros(500)
         input_edge_feature = edge_features.detach().clone().view(1,-1).squeeze()
         tensor_edge_features[edge_index[1][edge_index[0]==i]]= input_edge_feature
 
@@ -117,7 +118,7 @@ class COMA:
         
         edge_features_taken = node_features[edge_index[0][edge_index[0]==i]] + node_features[edge_index[1][edge_index[0]==i]]
         #print(edge_features_taken)
-        tensor_edge_features_taken = torch.zeros(32)
+        tensor_edge_features_taken = torch.zeros(500)
         input_edge_feature_taken = edge_features_taken.detach().clone().view(1,-1).squeeze()
         tensor_edge_features_taken[edge_index[1][edge_index[0]==i]]= input_edge_feature_taken
         #print(tensor_edge_features_taken)
@@ -142,8 +143,8 @@ class COMA:
         #Q値を保管するリスト 
         #このtensorには実際に行っていない行動に対しての評価値が欲しい
         #つまり,エッジの回帰？
-        real_Q_target = torch.empty(32,self.story_count,32)
-        real_Q_taken = torch.empty(32,self.story_count,32)
+        real_Q_target = torch.empty(500,self.story_count,500)
+        real_Q_taken = torch.empty(500,self.story_count,500)
 
         #print("エッジ",(observation_edges[0]==0).nonzero(as_tuple=False).t().contiguous()[0])
         for i in range(self.agent_num):
@@ -290,7 +291,7 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
 
 
     #分子　全ての時間　 あるペルソナに注目
-    rik = torch.empty(32,len(persona[0]))
+    rik = torch.empty(500,len(persona[0]))
 
 
     top = torch.sum(policy_ration,dim = 0)
@@ -308,11 +309,11 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
     return rik
 
 
-def execute_data(skiptime,drop):
-
+def execute_data(percent,attempt):
+    print("here")
     #ペルソナ数の設定:ペルソナの数[3,4,5,6,8,12]
     persona_num = 5
-    path = "experiment_data/NIPS/200_20/incomplete/t={}/drop={}/persona={}/gamma{}.npy".format(skiptime,drop,int(persona_num),int(persona_num))
+    path = "experiment_data/DBLP/incomplete/t=5/percent={}/attempt={}/gamma{}.npy".format(percent,attempt,5)
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
     persona_ration = torch.from_numpy(persona_ration).to(device)
@@ -330,17 +331,21 @@ def execute_data(skiptime,drop):
     #dropoutしたノードi
 
     #あるノードにi関する情報を取り除く
-    #list[tensor]のキモい構造なので
-    load_data.adj[4][drop,:] = 0
-    load_data.adj[4][:,drop] = 0
+    #list[tensor]のキモい構造なので        
+    skipnum = int(500*(percent/100))
+    randomnum = random.sample(range(0, 500), skipnum)
+    for r in randomnum:
+        load_data.adj[5][r,:] = 0
+        load_data.adj[5][:,r] = 0
     #load_data.feature[4][i][:] = 0
-    path = "experiment_data/NIPS/200_20/incomplete/t={}/drop={}/persona={}/means{}.npy".format(skiptime,drop,int(persona_num),int(persona_num))
+    path = "experiment_data/DBLP/incomplete/t=5/percent={}/attempt={}/means{}.npy".format(percent,attempt,5)
     means = np.load(path)
     means = means.astype("float32")
     #学習についての諸設定
     agent_num = len(load_data.adj[LEARNED_TIME])
     input_size = 81580
-    action_dim = 32
+    action_dim = 500
+    print("here2")
     
 
 
@@ -430,6 +435,7 @@ def execute_data(skiptime,drop):
 
 
         for i in range(story_count):
+            print(i)
 
             edges,feature = obs.state()
             feat,action = agents.get_actions(i,edges,feature)
@@ -583,19 +589,20 @@ def execute_data(skiptime,drop):
     print(edge_predict_probs)
 
    
-    spath= "/Users/matsumoto-hirotomo/coma/experiment_data/NIPS/200_20/incomplete/t={}/drop={}/".format(skiptime,drop)
+    spath= "/Users/matsumoto-hirotomo/coma/experiment_data/DBLP/incomplete/t=5/percent={}/".format(percent)
 
-    np.save(spath+"persona={}/proposed_edge_auc".format(persona_num), calc_log)
-    np.save(spath+"persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
-    np.save(spath+"persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
-    np.save(spath+"persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
+    np.save(spath+"attempt={}/proposed_edge_auc".format(attempt), calc_log)
+    np.save(spath+"attempt={}/proposed_edge_nll".format(attempt), calc_nll_log)
+    np.save(spath+"attempt={}/proposed_attr_auc".format(attempt), attr_calc_log)
+    np.save(spath+"attempt={}/proposed_attr_nll".format(attempt), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save(spath+"persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
-    np.save(spath+"persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
+    np.save(spath+"attempt={}/parameter".format(attempt),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
+    np.save(spath+"attempt={}/rw_paramerter".format(attempt),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
 
 
 
 if __name__ == "__main__":
-    for skiptime in range(1,5):
-        for i in range(32):
-            execute_data(skiptime,i)
+    for percent in [3,5,15,30,50,75]:
+        for attempt in range(15):
+            execute_data(percent,attempt)
+            

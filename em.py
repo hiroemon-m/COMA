@@ -91,7 +91,6 @@ def em_algorithm(N, K, X, means, sigmas):
     return gamma, means
 
 
-
 def tolist(data) -> None:
     np_alpha = []
     np_beta = []
@@ -108,8 +107,9 @@ def tolist(data) -> None:
 
 
 
-def excecute(skiptime,num,drop):
-    path = "model.param.data.fast"
+def excecute(p,num,drop):
+    path="experiment_data/DBLP/incomplete/t=5/percent={}/attempt={}/model.param.data.fast".format(p,drop)
+
     dblp_alpha,dblp_beta = tolist(path)
     data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta})
     
@@ -164,26 +164,27 @@ def excecute(skiptime,num,drop):
     means = []
     for i in mean:
         means.append(np.array(i))
-    gamma,means = em_algorithm(32,num,em,means,sigma)
+    gamma,means = em_algorithm(500,num,em,means,sigma)
     print(gamma)
     print(np.argmax(gamma,axis=1))
     np.argmax(gamma,axis=1)
     np.save(
-    "experiment_data/NIPS/200_20/incomplete/t={}/drop={}/persona={}/gamma{}".format(skiptime,drop,num,num), # データを保存するファイル名
+
+    "experiment_data/DBLP/incomplete/t=5/percent={}/attempt={}/gamma{}".format(p,drop,num,num), # データを保存するファイル名
     gamma,  # 配列型オブジェクト（listやnp.array)
     )
     
     np.save(
-    "experiment_data/NIPS/200_20/incomplete/t={}/drop={}/persona={}/means{}".format(skiptime,drop,num,num), # データを保存するファイル名
+    "experiment_data/DBLP/incomplete/t=5/percent={}/attempt={}/means{}".format(p,drop,num,num), # データを保存するファイル名
     means,  # 配列型オブジェクト（listやnp.array)
     )
     
 
 if __name__ == "__main__": 
-    for skiptime in range(1,5):
-        for i in range(32):
+    for p in [3,5,15,30,50,75]:
+        for i in range(15):
             print(i)
             persona=5
             drop=i
-            excecute(skiptime,persona,drop)
+            excecute(p,persona,drop)
     
