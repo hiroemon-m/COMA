@@ -55,7 +55,7 @@ class Actor(nn.Module):
             x = (x - min_values) / ((max_values - min_values) + 1e-4)
         
             
-            x = torch.tanh(x)
+            x = torch.sigmoid(x)
             #print("before",x[0])
             #print(persona[:,i])
             #persona_matrix = persona[:,i].view(-1, 1).repeat(1, 32)
@@ -101,7 +101,8 @@ class Actor(nn.Module):
             feat = r * attributes + tmp_tensor * (1 - r)
             next_feat += feat
             #print("feat",feat)
-            feat_prob = torch.tanh(feat)
+            #feat_prob = torch.sigmoid(feat)
+            feat_prob = feat
 
             #x = x.div((np.linalg.norm(feat.detach().clone()))*(np.linalg.norm(feat.detach().clone().t())))
 
@@ -121,7 +122,9 @@ class Actor(nn.Module):
             x = torch.expm1(x)
             #print(torch.max(x))
             x = x.mul(self.e[i])
-            x = torch.relu(x)
+            x = torch.clamp(x, max=75,min=0)
+
+            x = torch.tanh(x)
             #print(torch.max(x))
 
             #x = x.exp().mul(self.e[i])
@@ -129,13 +132,15 @@ class Actor(nn.Module):
             #print("x",torch.isnan(x).sum())
 
 
-            min_values = torch.min(x, dim=0).values
+            #min_values = torch.min(x, dim=0).values
             # # 各列の最大値 (dim=0 は列方向)
-            max_values = torch.max(x, dim=0).values
+            #max_values = torch.max(x, dim=0).values
             # Min-Max スケーリング
-            x = (x - min_values) / ((max_values - min_values) + 1e-8)
+            #x = (x - min_values) / ((max_values - min_values) + 1e-8)
 
-            x = self.persona[:,i]*torch.tanh(x)
+            x = self.persona[:,i]*x
+            #print(x[x<0])
+            #print(x[x>1.])
            
             #print(self.persona)
             #m = nn.ReLU(inplace=False)

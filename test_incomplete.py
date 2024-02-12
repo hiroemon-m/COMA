@@ -250,10 +250,6 @@ class COMA:
             self.actor.r -= 0.08 * self.actor.r.grad
             self.actor.W -= 0.08 * self.actor.W.grad
 
-        print("T_grad",self.actor.T.grad,str(0.0001 * self.actor.T.grad),self.actor.T)
-        print("e_grad",self.actor.e.grad,str(10000 * self.actor.e.grad),self.actor.e)
-        print("r_grad",self.actor.r.grad,str(0.0001 * self.actor.r.grad),self.actor.r)
-        print("w_grad",self.actor.W.grad,str(10 * self.actor.W.grad),self.actor.W)
             
 
 
@@ -308,11 +304,12 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
     return rik
 
 
-def execute_data(skiptime,drop):
+def execute_data(percent,attempt):
 
     #ペルソナ数の設定:ペルソナの数[3,4,5,6,8,12]
     persona_num = 5
-    path = "experiment_data/NIPS/200_20/incomplete/t={}/drop={}/persona={}/gamma{}.npy".format(skiptime,drop,int(persona_num),int(persona_num))
+    path_def = "experiment_data/NIPS/incomplete/t=4/percent={}/attempt={}".format(percent,attempt)
+    path = path_def+"/gamma{}.npy".format(persona_num)
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
     persona_ration = torch.from_numpy(persona_ration).to(device)
@@ -331,10 +328,23 @@ def execute_data(skiptime,drop):
 
     #あるノードにi関する情報を取り除く
     #list[tensor]のキモい構造なので
-    load_data.adj[4][drop,:] = 0
-    load_data.adj[4][:,drop] = 0
+    delete_path = path_def+"/delete_index"
+    with open(delete_path, "r") as f:
+        delete_index = f.readlines()
+    edgeindex=load_data.adj[4][:,:].nonzero(as_tuple=False)
+    #print(edgeindex)
+    #print(delete_index)
+    
+    for i in delete_index:
+        #print(i)
+        n = edgeindex[int(i)]
+       
+        #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+        load_data.adj[4][n.tolist()[0],n.tolist()[1]]=0
+        #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+    #exit()
     #load_data.feature[4][i][:] = 0
-    path = "experiment_data/NIPS/200_20/incomplete/t={}/drop={}/persona={}/means{}.npy".format(skiptime,drop,int(persona_num),int(persona_num))
+    path = path_def+"/means{}.npy".format(persona_num)
     means = np.load(path)
     means = means.astype("float32")
     #学習についての諸設定
@@ -382,13 +392,15 @@ def execute_data(skiptime,drop):
     sub_ln = []
     flag = True
     episode = 0
+    ln_sub=100
 
 
 
 
     #n_episodes = 10000
 
-    while flag or ln_sub <= 1:
+    while flag and ln_sub >= 1:
+        print("flag:",flag)
         
 
 
@@ -583,19 +595,19 @@ def execute_data(skiptime,drop):
     print(edge_predict_probs)
 
    
-    spath= "/Users/matsumoto-hirotomo/coma/experiment_data/NIPS/200_20/incomplete/t={}/drop={}/".format(skiptime,drop)
+ 
 
-    np.save(spath+"persona={}/proposed_edge_auc".format(persona_num), calc_log)
-    np.save(spath+"persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
-    np.save(spath+"persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
-    np.save(spath+"persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
+    np.save(path_def+"/proposed_edge_auc".format(persona_num), calc_log)
+    np.save(path_def+"/proposed_edge_nll".format(persona_num), calc_nll_log)
+    np.save(path_def+"/proposed_attr_auc".format(persona_num), attr_calc_log)
+    np.save(path_def+"/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save(spath+"persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
-    np.save(spath+"persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
+    np.save(path_def+"/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
+    np.save(path_def+"/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
 
 
 
 if __name__ == "__main__":
-    for skiptime in range(1,5):
-        for i in range(32):
-            execute_data(skiptime,i)
+    for percent in [3,5,15,30,50,75]:
+        for i in range(15):
+            execute_data(percent,i)

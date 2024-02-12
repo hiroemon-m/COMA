@@ -13,7 +13,7 @@ from tqdm import tqdm
 import config
 from init_real_data import init_real_data
 
-device = config.select_device
+device = torch.device('mps')
 
 
 class Interest(IntEnum):
@@ -40,7 +40,7 @@ class Optimizer:
         self.optimizer = optim.SGD(self.model.parameters(), lr=0.01)
         return
 
-    def optimize(self, t: int):
+    def optimize(self, t: int,n):
         feat = self.feats[t].to(device)
         edge = self.edges[t].to(device)
         self.optimizer.zero_grad()
@@ -50,7 +50,11 @@ class Optimizer:
         sim = torch.add(sim, 0.001)
 
         costs = torch.mul(edge, self.model.beta)
+        #print(costs[n[0],n[1]])
+        #print(t,edge[n[0],n[1]])
         costs = torch.add(costs, 0.001)
+    
+         
 
         reward = torch.sub(sim, costs)
         loss = -reward.sum()
@@ -62,9 +66,9 @@ class Optimizer:
         
 
 
-    def export_param(self,skiptime,k,persona):
+    def export_param(self,skiptime,p,k):
 
-        with open("experiment_data/NIPS/200_20/incomplete/t={}/drop={}/persona={}/model.param.data.fast".format(skiptime,k,persona), "w") as f:
+        with open("experiment_data/NIPS/incomplete/t={}/percent={}/attempt={}/model.param.data.fast".format(skiptime,p,k), "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
 
@@ -78,38 +82,65 @@ class Optimizer:
 
 
 if __name__ == "__main__":
-    for skiptime in range(4):
-        skiptime +=1
-        for k in range(32):
+    for p in [3,5,15,30,50,75]:
+
+        skiptime = 4
+        for k in range(15):
+
+
             data = init_real_data()
 
             data_size = len(data.adj[0])
 
             alpha = torch.from_numpy(
-                np.array(
-                    [1.0 for i in range(data_size)],
-                    dtype=np.float32,
-                ),
-            ).to(device)
+            np.array(
+                        [1.0 for i in range(data_size)],
+                        dtype=np.float32,
+                    ),
+                ).to(device)
 
             beta = torch.from_numpy(
-                np.array(
-                    [1.0 for i in range(data_size)],
-                    dtype=np.float32,
-                ),
-            ).to(device)
+                    np.array(
+                        [1.0 for i in range(data_size)],
+                        dtype=np.float32,
+                    ),
+                ).to(device)
             model = Model(alpha, beta)
 
 
             persona = 5
-            #あるノードにi関する情報を取り除く
-            #list[tensor]のキモい構造なので
-            data.adj[skiptime][k,:] = 0
-            data.adj[skiptime][:,k] = 0
-            #data.feature[4][i][:] = 0
+                #あるノードにi関する情報を取り除く
+                #list[tensor]のキモい構造なので
             
-            
+            #エッジの接続リスト
+            edgeindex=data.adj[4][:,:].nonzero(as_tuple=False)
+
+            #エッジの本数
+            edge_num = edgeindex.size()[0]
+      
+            #パーセントに応じて取り除く数を決める
+            skipnum = int(edge_num*(p/100))
+
+            skipindex = random.sample(range(0, edge_num), skipnum)
+            for i in skipindex:
+                n = edgeindex[i]
+       
+                #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+                data.adj[skiptime][n.tolist()[0],n.tolist()[1]]=0
+                #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+                
+                
+        
+                #data.feature[4][r][:] = 0
+            with open("experiment_data/NIPS/incomplete/t=4/percent={}/attempt={}/delete_index".format(p,k), "w") as f:
+                for i in skipindex:
+                    f.write(
+                              "{}\n".format(str(i))
+                            )
+                        
+
+            #print(data.adj[4][:,:].nonzero(as_tuple=False).size()) 
             optimizer = Optimizer(data.adj, data.feature, model, data_size)
             for t in range(5):
-                optimizer.optimize(t)
-            optimizer.export_param(skiptime,k,persona)
+                optimizer.optimize(t,n.tolist())
+            optimizer.export_param(skiptime,p,k)
