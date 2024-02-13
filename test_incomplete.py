@@ -602,8 +602,14 @@ def execute_data(percent,attempt):
     np.save(path_def+"/proposed_attr_auc".format(persona_num), attr_calc_log)
     np.save(path_def+"/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save(path_def+"/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
-    np.save(path_def+"/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
+    print(type(alpha))
+    print(type(beta))
+    print(type(T))
+    print(type(e))
+    print(type(r))
+    print(type(w))
+    np.save(path_def+"/parameter".format(persona_num),np.concatenate([alpha.cpu().detach().numpy(),beta.cpu().detach().numpy(),T.cpu().detach().numpy(),e.cpu().detach().numpy()],axis=0))
+    np.save(path_def+"/rw_paramerter".format(persona_num),np.concatenate([r.cpu().detach().numpy(),w.cpu().detach().numpy()],axis=0))
 
 
 

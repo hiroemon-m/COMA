@@ -13,8 +13,7 @@ from tqdm import tqdm
 import config
 from init_real_data import init_real_data
 
-device = torch.device('mps')
-
+device = config.select_device
 
 class Interest(IntEnum):
     RED = 2
