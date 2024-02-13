@@ -181,7 +181,7 @@ def excecute(percent,num,attempt):
 
 if __name__ == "__main__": 
     for percent in [3,5,15,30,50,75]:
-        for attempt in range(15):
+        for attempt in range(15,31):
             persona=5
            
             excecute(percent,persona,attempt)

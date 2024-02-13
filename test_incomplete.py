@@ -615,5 +615,5 @@ def execute_data(percent,attempt):
 
 if __name__ == "__main__":
     for percent in [3,5,15,30,50,75]:
-        for i in range(15):
+        for i in range(15,31):
             execute_data(percent,i)

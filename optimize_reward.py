@@ -84,7 +84,7 @@ if __name__ == "__main__":
     for p in [3,5,15,30,50,75]:
 
         skiptime = 4
-        for k in range(15):
+        for k in range(15,31):
 
 
             data = init_real_data()
