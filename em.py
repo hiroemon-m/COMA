@@ -108,8 +108,8 @@ def tolist(data) -> None:
 
 
 
-def excecute(percent,num,attempt):
-    path = "experiment_data/NIPS/incomplete/t=4/percent={}/attempt={}/model.param.data.fast".format(percent,attempt)
+def excecute(percent,num,attempt,skiptime):
+    path = "experiment_data/NIPS/incomplete/t={}/edge/percent={}/attempt={}/model.param.data.fast".format(skiptime,percent,attempt)
     dblp_alpha,dblp_beta = tolist(path)
     data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta})
     
@@ -169,20 +169,21 @@ def excecute(percent,num,attempt):
     print(np.argmax(gamma,axis=1))
     np.argmax(gamma,axis=1)
     np.save(
-    "experiment_data/NIPS/incomplete/t=4/percent={}/attempt={}/gamma{}".format(percent,attempt,num,num), # データを保存するファイル名
+    "experiment_data/NIPS/incomplete/t={}/edge/percent={}/attempt={}/gamma{}".format(skiptime,percent,attempt,num,num), # データを保存するファイル名
     gamma,  # 配列型オブジェクト（listやnp.array)
     )
     
     np.save(
-    "experiment_data/NIPS/incomplete/t=4/percent={}/attempt={}/means{}".format(percent,attempt,num,num), # データを保存するファイル名
+    "experiment_data/NIPS/incomplete/t={}/edge/percent={}/attempt={}/means{}".format(skiptime,percent,attempt,num,num), # データを保存するファイル名
     means,  # 配列型オブジェクト（listやnp.array)
     )
     
 
 if __name__ == "__main__": 
-    for percent in [3,5,15,30,50,75]:
-        for attempt in range(15,31):
-            persona=5
-           
-            excecute(percent,persona,attempt)
+    for percent in [5,15,30,50,75]:
+        for skiptime in [0,1,2,3,4]:
+            for attempt in range(0,30):
+                persona=5
+            
+                excecute(percent,persona,attempt,skiptime)
     

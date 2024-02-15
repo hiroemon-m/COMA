@@ -24,6 +24,7 @@ class LoadDataset:
 
 def init_real_data() -> LoadDataset:
     input_graph = attr_graph_dynamic_spmat_NIPS(T=TOTAL_TIME)
+    #input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME)
     adj = input_graph.Gmat_list
     feature = input_graph.Amat_list
  

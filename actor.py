@@ -81,6 +81,7 @@ class Actor(nn.Module):
         norm = attributes.norm(dim=1)[:, None] 
         norm = norm + 1e-8
         attributes = attributes.div(norm)
+
         #print(self.persona[:,1])
         #print(self.persona)
         edges = (edges > 0).float().to(device)
@@ -91,15 +92,20 @@ class Actor(nn.Module):
             #隣接ノードと自分の特徴量を集約する
             #print(edges.size()) 32x32
             #print(attributes.size())32x2411
-            tmp_tensor = self.W[i] * torch.matmul(edges, attributes)
+            tmp_tensor = (self.W[i]+1e-4) * torch.matmul(edges, attributes)
             #tmp_tensor = torch.matmul(edges, attributes)
-            
+       
+      
+         
             #feat =  0.5*attributes + 0.5*tmp_tensor
             r = self.r[i]
 
             r = r + 1e-8
             feat = r * attributes + tmp_tensor * (1 - r)
+          
+
             next_feat += feat
+
             #print("feat",feat)
             #feat_prob = torch.sigmoid(feat)
             feat_prob = feat
@@ -116,7 +122,7 @@ class Actor(nn.Module):
             x = x.div(self.T[i])+1e-4
             #print("max_x",torch.max(x))
             #print("x",torch.isnan(x).sum())
-            x = torch.clamp(x, max=75)
+           
             #x = torch.clamp(x, max=75)
             #print("clamp_x",torch.max(x))
             x = torch.expm1(x)
@@ -149,7 +155,7 @@ class Actor(nn.Module):
             #print(int(i),x)
             probability += x
         #print(probability)
-            
+   
         
    
 

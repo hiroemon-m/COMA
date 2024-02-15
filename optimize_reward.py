@@ -39,7 +39,7 @@ class Optimizer:
         self.optimizer = optim.SGD(self.model.parameters(), lr=0.01)
         return
 
-    def optimize(self, t: int,n):
+    def optimize(self, t: int):
         feat = self.feats[t].to(device)
         edge = self.edges[t].to(device)
         self.optimizer.zero_grad()
@@ -67,7 +67,7 @@ class Optimizer:
 
     def export_param(self,skiptime,p,k):
 
-        with open("experiment_data/NIPS/incomplete/t={}/percent={}/attempt={}/model.param.data.fast".format(skiptime,p,k), "w") as f:
+        with open("experiment_data/NIPS/incomplete/t={}/edge/percent={}/attempt={}/model.param.data.fast".format(skiptime,p,k), "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
 
@@ -83,63 +83,84 @@ class Optimizer:
 if __name__ == "__main__":
     for p in [3,5,15,30,50,75]:
 
-        skiptime = 4
-        for k in range(15,31):
+        for skiptime in [4]:
+            for k in range(0,30):
 
 
-            data = init_real_data()
+                data = init_real_data()
 
-            data_size = len(data.adj[0])
+                data_size = len(data.adj[0])
 
-            alpha = torch.from_numpy(
-            np.array(
-                        [1.0 for i in range(data_size)],
-                        dtype=np.float32,
-                    ),
-                ).to(device)
+                alpha = torch.from_numpy(
+                np.array(
+                            [1.0 for i in range(data_size)],
+                            dtype=np.float32,
+                        ),
+                    ).to(device)
 
-            beta = torch.from_numpy(
-                    np.array(
-                        [1.0 for i in range(data_size)],
-                        dtype=np.float32,
-                    ),
-                ).to(device)
-            model = Model(alpha, beta)
+                beta = torch.from_numpy(
+                        np.array(
+                            [1.0 for i in range(data_size)],
+                            dtype=np.float32,
+                        ),
+                    ).to(device)
+                model = Model(alpha, beta)
 
 
-            persona = 5
-                #あるノードにi関する情報を取り除く
-                #list[tensor]のキモい構造なので
-            
-            #エッジの接続リスト
-            edgeindex=data.adj[4][:,:].nonzero(as_tuple=False)
-
-            #エッジの本数
-            edge_num = edgeindex.size()[0]
-      
-            #パーセントに応じて取り除く数を決める
-            skipnum = int(edge_num*(p/100))
-
-            skipindex = random.sample(range(0, edge_num), skipnum)
-            for i in skipindex:
-                n = edgeindex[i]
-       
-                #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
-                data.adj[skiptime][n.tolist()[0],n.tolist()[1]]=0
-                #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+                persona = 5
+                    #あるノードにi関する情報を取り除く
+                    #list[tensor]のキモい構造なので
                 
-                
+                #エッジ
+                #エッジの接続リスト
+                edgeindex=data.adj[skiptime][:,:].nonzero(as_tuple=False)
+
+                #エッジの本数
+                edge_num = edgeindex.size()[0]
         
-                #data.feature[4][r][:] = 0
-            with open("experiment_data/NIPS/incomplete/t=4/percent={}/attempt={}/delete_index".format(p,k), "w") as f:
-                for i in skipindex:
-                    f.write(
-                              "{}\n".format(str(i))
-                            )
-                        
+                #パーセントに応じて取り除く数を決める
+                skipnum = int(edge_num*(p/100))
+        
 
-            #print(data.adj[4][:,:].nonzero(as_tuple=False).size()) 
-            optimizer = Optimizer(data.adj, data.feature, model, data_size)
-            for t in range(5):
-                optimizer.optimize(t,n.tolist())
-            optimizer.export_param(skiptime,p,k)
+                skipindex = random.sample(range(0, edge_num), skipnum)
+                for i in skipindex:
+                    n = edgeindex[i]
+        
+                    #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+                    data.adj[skiptime][n.tolist()[0],n.tolist()[1]]=0
+                    #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+                    
+                    
+            
+             
+                with open("experiment_data/NIPS/incomplete/t={}/edge/percent={}/attempt={}/delete_index".format(skiptime,p,k), "w") as f:
+                    for i in skipindex:
+                        f.write(
+                                  "{}\n".format(str(i))
+                                )
+                #属性値消す
+                #skipnum = int(data_size*(p/100))
+                #skipindex = random.sample(range(0, data_size), skipnum)
+                #for i in skipindex:
+
+                    #print(data.feature[4][i][:])
+                #    data.feature[skiptime][i][:] = 0
+                    #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+                    #data.adj[skiptime][n.tolist()[0],n.tolist()[1]]=0
+                    #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+                    #print(data.feature[4][i][:])
+                    #print(1111)
+                    
+            
+                    #data.feature[4][r][:] = 0
+                #with open("experiment_data/NIPS/incomplete/t={}/edge/percent={}/attempt={}/delete_index".format(skiptime,p,k), "w") as f:
+                #    for i in skipindex:
+                #        f.write(
+                #                "{}\n".format(str(i))
+                #        )
+
+                #print(data.adj[4][:,:].nonzero(as_tuple=False).size()) 
+                optimizer = Optimizer(data.adj, data.feature, model, data_size)
+                for t in range(5):
+                    optimizer.optimize(t)
+                optimizer.export_param(skiptime,p,k)

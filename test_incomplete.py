@@ -241,16 +241,25 @@ class COMA:
 
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1)
 
-
+        for w in self.actor.W.grad:
+            if torch.isnan(w):
+                self.actor.W.grad=torch.tensor([[0.0],[0.0],[0.0],[0.0],[0.0]], device='mps:0')
+                print("wasnan",self.actor.W.grad)
+        
+        for r in self.actor.r.grad:
+            if torch.isnan(r):
+                self.actor.r.grad=torch.tensor([[0.0],[0.0],[0.0],[0.0],[0.0]], device='mps:0')
+                print("wasnan",self.actor.r.grad)
 
         with torch.no_grad():
            
             self.actor.T -= 1 * self.actor.T.grad
             self.actor.e -= 10000 * self.actor.e.grad
-            self.actor.r -= 0.08 * self.actor.r.grad
+            self.actor.r -= 0.08 * self.actor.r.grad     
             self.actor.W -= 0.08 * self.actor.W.grad
-
-            
+  
+        print("grad",self.actor.W.grad)
+   
 
 
 
@@ -304,11 +313,11 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
     return rik
 
 
-def execute_data(percent,attempt):
+def execute_data(percent,attempt,skiptime,ver):
 
     #ペルソナ数の設定:ペルソナの数[3,4,5,6,8,12]
     persona_num = 5
-    path_def = "experiment_data/NIPS/incomplete/t=4/percent={}/attempt={}".format(percent,attempt)
+    path_def = "experiment_data/DBLP/incomplete/t={}/{}/percent={}/attempt={}".format(skiptime,ver,percent,attempt)
     path = path_def+"/gamma{}.npy".format(persona_num)
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
@@ -331,18 +340,24 @@ def execute_data(percent,attempt):
     delete_path = path_def+"/delete_index"
     with open(delete_path, "r") as f:
         delete_index = f.readlines()
-    edgeindex=load_data.adj[4][:,:].nonzero(as_tuple=False)
-    #print(edgeindex)
-    #print(delete_index)
-    
-    for i in delete_index:
-        #print(i)
-        n = edgeindex[int(i)]
-       
-        #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
-        load_data.adj[4][n.tolist()[0],n.tolist()[1]]=0
-        #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
-    #exit()
+    if ver == "edge":
+        print("edge")
+        edgeindex=load_data.adj[skiptime][:,:].nonzero(as_tuple=False)
+        #print(edgeindex)
+        #print(delete_index)
+        
+        for i in delete_index:
+            #print(i)
+            n = edgeindex[int(i)]
+        
+            #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+            load_data.adj[skiptime][n.tolist()[0],n.tolist()[1]]=0
+            #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+        #exit()
+    else:
+        print("attr")
+        for i in delete_index:
+            load_data.feature[skiptime][int(i)][:] = 0
     #load_data.feature[4][i][:] = 0
     path = path_def+"/means{}.npy".format(persona_num)
     means = np.load(path)
@@ -399,7 +414,7 @@ def execute_data(percent,attempt):
 
     #n_episodes = 10000
 
-    while flag and ln_sub >= 1:
+    while flag and ln_sub >=  0.1:
         print("flag:",flag)
         
 
@@ -502,12 +517,15 @@ def execute_data(percent,attempt):
             feat, action = agents.get_actions(
                 t,edges, feature
             )
+
             del edges, feature
-
+       
             reward = obs.step(feat,action)
-
+    
             target_prob = torch.ravel(feat).to("cpu")
-         
+          
+
+            #print(torch.isnan(target_prob))
             gc.collect()
             detach_attr = (
                 torch.ravel(load_data.feature[GENERATE_TIME + t])
@@ -518,9 +536,14 @@ def execute_data(percent,attempt):
             pos_attr = detach_attr.numpy()
             attr_numpy = np.concatenate([pos_attr], 0)
             target_prob = target_prob.to("cpu").detach().numpy()
+            print(np.isnan(target_prob).sum())
 
             attr_predict_probs = np.concatenate([target_prob], 0)
             #NLL
+            print(np.isnan(attr_predict_probs).sum())
+ 
+            print("----------")
+   
             # NLLを計算
             criterion = nn.CrossEntropyLoss()
             error_attr = criterion(
@@ -614,6 +637,8 @@ def execute_data(percent,attempt):
 
 
 if __name__ == "__main__":
-    for percent in [3,5,15,30,50,75]:
-        for i in range(15,31):
-            execute_data(percent,i)
+    for ver in ["attr"]:
+        for percent in [5,15,30,50,75]:
+            for skiptime in [4]:
+                for i in range(15,30):
+                    execute_data(percent,i,skiptime,ver)
