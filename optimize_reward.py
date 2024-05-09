@@ -115,9 +115,9 @@ if __name__ == "__main__":
    
 
 
-    data.adj[4][i,:] = 0
-    data.adj[4][:,i] = 0
-    data.feature[4][i][:] = 0
+    #data.adj[4][i,:] = 0
+    #data.adj[4][:,i] = 0
+    #data.feature[4][i][:] = 0
 
 
 
