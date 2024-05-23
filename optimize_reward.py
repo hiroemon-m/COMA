@@ -100,7 +100,7 @@ if __name__ == "__main__":
         ),
     ).to(device)
     model = Model(alpha, beta)
-    i = 8
+    #i = 8
     #あるノードにi関する情報を取り除く
     #list[tensor]のキモい構造なので
     #for n in range(5):

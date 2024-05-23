@@ -16,7 +16,7 @@ import csv
 device = config.select_device
 
 
-class Actor(nn.Module):
+class Critic(nn.Module):
     def __init__(self, T, e, r, w,persona) -> None:
         super().__init__()
         self.T = nn.Parameter(
@@ -32,41 +32,6 @@ class Actor(nn.Module):
             torch.tensor(w).float().view(-1, 1).to(device), requires_grad=True
         )
         self.persona = persona
-
-    def calc_ration(self,attributes, edges,persona):
-
-        calc_policy = torch.empty(len(persona[0]),32)
-        norm = attributes.norm(dim=1)[:, None] 
-        norm = norm + 1e-8
-        attributes = attributes.div(norm)
-        # インプレース操作を回避するために新しい変数を使用して新しいテンソルを作成
-        edges_float = edges.float()
-        edge_index = edges_float > 0
-        edges =edge_index.float().to(device)
-
-        for i in range(len(persona[0])):
-        
-            tmp_tensor = self.W[i] * torch.matmul(edges, attributes)
-            r = self.r[i]
-            r = r + 1e-8
-            feat = r * attributes + tmp_tensor * (1 - r)
-            x = torch.mm(feat, feat.t())
-            x = x.div(self.T[i])+1e-8
-            x = x*self.e[i]
-
-            #x = torch.clamp(x, max=75)
-            #x=x.exp().mul(self.e[i])
-            #min_values = torch.min(x, dim=0).values
-            #max_values = torch.max(x, dim=0).values
-            #x = (x - min_values) / ((max_values - min_values) + 1e-4)
-        
-            
-            x = torch.tanh(x)
-            calc_policy[i] = torch.sum(x,dim=1)
-
-         
-        return calc_policy
-
   
 
 
@@ -105,12 +70,10 @@ class Actor(nn.Module):
             #min_values = torch.min(x, dim=0).values
             #max_values = torch.max(x, dim=0).values
             #x = (x - min_values) / ((max_values - min_values) + 1e-8)
-            x = torch.tanh(x)
-            x = self.persona[:,i]*x
     
-            probability =  torch.clamp(probability + x ,min=0,max=1)
 
-        return probability, feat
+
+        return x, feat
 
 
 
@@ -151,13 +114,12 @@ class Actor(nn.Module):
             #min_values = torch.min(x, dim=0).values
             #max_values = torch.max(x, dim=0).values
             #x = (x - min_values) / ((max_values - min_values) + 1e-8)
-            x = torch.tanh(x)
-            y = self.persona[:,i]*x
-            #print(y)
-            probability =  torch.clamp(probability + y ,min=0,max=1)
+
+            print(x)
+
             #print(probability)
     
 
-        return probability, feat
+        return x
 
 

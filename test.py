@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
+import tensorflow as tf
 
 
 
@@ -19,257 +20,258 @@ from init_real_data import init_real_data
 #another file
 from memory import Memory
 from actor import Actor
-from critic import Critic
+from critic import TimeSeriesGCN
+from critc import Critic
 from beforecritic import CriticBefore
 
 device = config.select_device
 
-class COMA:
+class PPO:
     def __init__(self, obs,agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik,story_count):
         self.agent_num = agent_num
         self.action_dim = action_dim
-        self.input_size = 81580
+        self.input_size = 2411
         self.gamma = gamma
         self.persona = rik
         self.target_update_steps = target_update_steps
         self.story_count = story_count 
         self.memory = Memory(agent_num, action_dim,self.story_count)
-        #self.actor = [Actor(T[i],e[i],r[i],w[i],rik[i]) for i in range(len(alpha))]
         self.obs = obs
-        self.actor = Actor(T,e,r,w,rik)
-        num_features = self.obs.feature.size()[1]
-        #t-1での単位行列のサイズ
-        before_features = self.obs.edges.size()[1]
-        print(before_features)
-        self.critic = Critic(num_features, num_features//10, 1)
-        self.critic_before = CriticBefore(before_features,before_features//10, 1)
-
         self.alpha = self.obs.alpha
         self.beta = self.obs.beta
-        #crit
-
-        self.critic_target = Critic(num_features,  num_features//10, 1)
-        self.critic_target_before = CriticBefore(before_features, before_features//10, 1)
-        #critic.targetをcritic.state_dictから読み込む
-        self.critic_target.load_state_dict(self.critic.state_dict())
-        params = [self.obs.alpha,self.obs.beta]
-        #adamにモデルを登録
-        #self.actors_optimizer = [torch.optim.Adam(self.actor.parameters(), lr=lr_a) for i in range(agent_num)]
-        self.actors_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_a) 
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=0.01, weight_decay=5e-4)
-        self.critic_before_optimizer = torch.optim.Adam(self.critic_before.parameters(), lr=0.01, weight_decay=5e-4)
         self.ln = 0
-
         self.count = 0
+        self.actor = Actor(T,e,r,w,rik)
+        self.new_actor = Actor(T,e,r,w,rik)
+        #self.critic = TimeSeriesGCN(self.input_size,story_count)
+        self.critic = Critic(T,e,r,w,rik)
+        self.new_critic = Critic(T,e,r,w,rik)
+        #self.new_critic = TimeSeriesGCN(self.input_size,story_count)
+
+        #adamにモデルを登録
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_a) 
+        self.new_actor_optimizer = torch.optim.Adam(self.new_actor.parameters(), lr=lr_a) 
+        self.new_critic_optimizer = torch.optim.Adam(self.new_critic.parameters(), lr=lr_c) 
+        #self.new_critic_optimizer = torch.optim.Adam(self.new_critic.parameters(), lr=lr_c) 
 
 
-    def get_actions(self,time, edges,feat):
-  
-        prob,feat,_= self.actor.predict(feat,edges)
-    
-        #print("prob",prob.shape)
-        for i in range(self.agent_num): 
-            self.memory.pi[time][i]=prob[i]
-            #print(prob[i])
-            
-    
-        action = prob.bernoulli()
-        #observation,actionの配列に追加　actions,observationsは要素がエージェントの個数ある配列
-        self.memory.observation_edges[time]=edges
-        self.memory.observation_features[time]=feat
-        self.memory.actions[time]=action
 
-        return feat,action
-    
-    def create_edge_features(self,node_features, edge_index):
-    # エッジのノード特徴を取得
-        tensor_edge_features = torch.zeros(self.agent_num,self.agent_num)
-        for i in range(self.agent_num):
-            #反証行動の中から特定のagentに関する接続情報を取得
-            agent_edge_index = (edge_index==i).nonzero(as_tuple=False).t().contiguous()
-            #print(edge_index[0][edge_index[0]==i])
-            #print(edge_index[1][edge_index[0]==i])
-            #一つ目のtenosr 0は元のtenosr1行目(to) 1は2行目(go) 行番号
-            #2つ目のtenosr 列番号
-            #node_featuresは３２なのでedge_indexでリンク元リンク先の特徴をとる
-            #edge_indexは0起点で相手がわかるので
-            #print(edge_index[0][edge_index[0]==i])
 
-            #edge_features = node_features[agent_edge_index[0][agent_edge_index[0]==0]] + node_features[edge_index[1][edge_index[0]==i]]
-            edge_features = node_features[edge_index[0][edge_index[0]==i]] + node_features[edge_index[1][edge_index[0]==i]]
-            #edge_features = torch.cat((agent_edge_index[0][agent_edge_index[0]==0].view(-1,1),edge_index[1][edge_index[0]==i].view(-1,1),edge_features),dim=1)
-            #これでも良いがPiが32,20,32とかいう訳のわからん形状
-            ########
-            #tensor_edge_features = torch.zeros(32,32)
-            #tensor_edge_features.index_put_((agent_edge_index[0][agent_edge_index[0]==0],edge_index[1][edge_index[0]==i]),edge_features.view(1,-1).squeeze())
-            ########
-            
-            input_edge_feature = edge_features.detach().clone().view(1,-1).squeeze()
-            tensor_edge_features[i][edge_index[1][edge_index[0]==i]]= input_edge_feature
-
-        return tensor_edge_features
-    
-    def create_taken_edge_features(self,node_features, edge_index):
-    # エッジのノード特徴を取得
-     
-        #agent_edge_index = (edge_index==i).nonzero(as_tuple=False).t().contiguous()
-        tensor_edge_features_taken = torch.zeros(self.agent_num,self.agent_num)
-        for i in range(self.agent_num):
+    def get_actions(self,env, edges,feat):
         
-            edge_features_taken = node_features[edge_index[0][edge_index[0]==i]] + node_features[edge_index[1][edge_index[0]==i]]
-            #print(edge_features_taken)
-
-            input_edge_feature_taken = edge_features_taken.detach().clone().view(1,-1).squeeze()
-            tensor_edge_features_taken[i][edge_index[1][edge_index[0]==i]]= input_edge_feature_taken
-            #print(tensor_edge_features_taken)
-
-        return tensor_edge_features_taken
-
-    
-    def train(self):
-        actor_optimizer = self.actors_optimizer
-        critic_optimizer = self.critic_optimizer
-        critic_before_optimizer = self.critic_before_optimizer
-        actions, observation_edges,observation_features, pi, reward= self.memory.get()
-
-        lnpxz = pi.view(-1).sum()
-        #print("ln",lnpxz)
-        self.ln = lnpxz
-       
-        actor_loss = 0
-        critic_loss = 0
-        
-        self.critic_target.train() 
-        self.critic.train() 
-        #Q値を保管するリスト 
-        #このtensorには実際に行っていない行動に対しての評価値が欲しい
-        #つまり,エッジの回帰？
-        real_Q_target = torch.empty(self.story_count,self.agent_num,self.agent_num)
-        real_Q_taken = torch.empty(self.story_count,self.agent_num,self.agent_num)
-
-        #print("エッジ",(observation_edges[0]==0).nonzero(as_tuple=False).t().contiguous()[0])
-  
-            
-        for t in range(self.story_count):
-                #反証行動
-                #反証行動のみ,[32,32]要素0から置き換える
-                #critic_targetは,エッジ生成の評価値が欲しい
-            input_critic = (observation_edges[t]==1).nonzero(as_tuple=False).t().contiguous()
-            input_crtic_target = (observation_edges[t]==0).nonzero(as_tuple=False).t().contiguous()
-            Q = self.critic(input_critic,observation_features[t])
-            Q_target = self.critic_target(input_crtic_target,observation_features[t])
-            #Q_target = Q_target.squeeze() 
-                
-            #反証行動
-            edge_index = (observation_edges[t]==0).nonzero(as_tuple=False).t().contiguous()
-            edge_features = self.create_edge_features(Q_target,edge_index)
-
-            #実際に取った行動
-            edge_index_taken = (observation_edges[t]==1).nonzero(as_tuple=False).t().contiguous()
-            edge_features_taken = self.create_taken_edge_features(Q,edge_index_taken)
-                
-                #Q_beforeいらないかも〜
-                #Q_target_before = self.critic_target_before(observation_edges[t].nonzero(as_tuple=False).t().contiguous(),self.obs.identity) 
-                #real_Q_target[t]  = (Q_target + Q_target_before).squeeze()
-    
-            real_Q_target[t,:,:]  = edge_features
-            real_Q_taken[t,:,:] = edge_features_taken
-
-        #反証的ベースライン
-        #これで32x20x32を返す
-        #baseline = pi * real_Q_target
-        #→時間の和をとる
-        #32x32で各行はagentaの反証行動の値
-        pi_new = pi.detach().clone().permute(1,0,2)
-        baseline = torch.sum(pi_new * real_Q_target,dim=1)
-        max_indices = []
-        Q_taken_target =torch.empty(self.story_count,self.agent_num)
-            #Q_taken_li =[]
-        for i in range(self.agent_num):
-            action_taken = actions[:,i,:].type(torch.long).reshape(self.story_count, -1)  
-            #5->10を予測するので5
-            for j in range(self.story_count):
-                Q_taken_target_num = 0
-
-                max_indices.append(torch.where(action_taken[j] == 1)[0].tolist())
-                actions_taken = max_indices
-                Q_taken_target[j] = real_Q_taken[j][i]*action_taken[j]
-
-            #利得関数
-  
-            advantage = Q_taken_target - baseline
-            #あるagent:iのすべての時間での他のノードととのエッジの生成確率
-            #advantage_re = advantage.reshape(self.story_count,1)
-            advantage_re = advantage
-            log_pi_mul = torch.mul(pi[i],action_taken) 
-            log_pi_mul[log_pi_mul == float(0.0)] = torch.exp(torch.tensor(2.0))
-            log_pi = torch.log(log_pi_mul)
-            log_pi[log_pi == float(2.0)] = 0.0
-            actor_loss =actor_loss - torch.mean(advantage_re * log_pi)
-            r = torch.empty(len(reward[:, i]))
-
-            for t in range(len(reward[:, i])):
-                    #ゴールに到達した場合は,次の状態価値関数は0
-                if t == self.story_count-1:
-                    r[t] = reward[:, i][t]
-                        #r_li.append(reward[:, i][t])
-                    #ゴールでない場合は、
-                else:
-                        #Reward + γV(st+1)
-                        #print(t, Q_taken_target[t + 1])
-                    #reward[:, i][t]はスカラー
-                    r[t] = reward[:, i][t] + self.gamma * torch.sum(real_Q_taken[t + 1][i])
-     
-            #print(torch.sum(real_Q_taken,dim=1)[i].size())
-
-
-            critic_loss = critic_loss + torch.mean((r - torch.sum(real_Q_taken[:,i,:],dim=1))**2)
-        # train critic
-        print("i reach here")
-        critic_optimizer.zero_grad()
-        critic_loss.backward(retain_graph=True)
-        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1)
-        #print("a&b_grad",self.obs.alpha,self.obs.beta)
-
-        critic_optimizer.step()
-       
-
- 
-        #actor
-            #torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 5)
-
-
-
-        actor_optimizer.zero_grad() 
-        actor_loss.backward()
-
-        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1)
-
-
-
         with torch.no_grad():
-           
-            self.actor.T -= 0.01 * self.actor.T.grad
-            self.actor.e -= 10000 * self.actor.e.grad
-            self.actor.r -= 0.01 * self.actor.r.grad
-            self.actor.W -= 0.01 * self.actor.W.grad
+        
+            prob,feat = self.actor.predict(feat,edges)
+    
+        return feat,prob
+    
 
-        print("T_grad",self.actor.T.grad,self.actor.T)
-        print("e_grad",self.actor.e.grad,self.actor.e)
-        print("r_grad",self.actor.r.grad,self.actor.r)
-        print("w_grad",self.actor.W.grad,self.actor.W)
+    
+    def train(self,gamma,lamda,param):
+
+        #----gae----
+        G,loss = 0,0
+        cliprange=0.2
+        storycount = self.story_count
+
+
+       
+        #print("---")
+        #print(pi)
+        #print(old_parm)
+        #print(mixture)
+
+        lnpxz = self.memory.actions.view(-1).sum()
+        v = torch.empty([storycount,32,32])
+        n_v = torch.empty([storycount,32,32])
+        for i in range(len(self.memory.features)):
+            with torch.no_grad():
+                v[i] = self.critic.predict(self.memory.features[i],self.memory.edges[i]).clone()
+                #v = self.critic.predict(self.memory.edges,self.memory.features)
+            #n_v = self.new_critic.predict(self.memory.next_edges,self.memory.next_features)
+            n_v[i] = self.new_critic.predict(self.memory.features[i],self.memory.edges[i]).clone()
+
+        gae_li = torch.empty(storycount,32,32)
+        gae = 0
+        #print(n_v.size()) 10x1
+        #print("aa",self.memory.reward.size()) 10x32x1
+        #slf.,memory.reward 10x32x1
+        #r1x32x1
+        for i in reversed(range(len(self.memory.reward))):
+            r = self.memory.reward[i]
+            print(v[i])
+            #print("r",r.size())#10x32x1
+            #print("v",v.size())#10x32x32
+
+            if i == len(self.memory.reward) - 1:
+                    # エピソード最後は次の状態価値はない
+                delta = r - v[i]
+                
+        
+            else:
+                    # delta = r + γV(t+1) - V(t)
+                delta = r + gamma * n_v[i] - v[i]
+            print("r",r)
+            print("gae",gae)
+                
+                # A = delta(t) + γ*λ*delta(t+1)
+            gae = delta +  gamma * lamda * gae
+            #gae 32x32
+            #print(gae)
+                # 各stepのGAEを保存し、バッチとする
+            gae_li[i] =gae
+                #batch = self.recent_batch[i]
+                #batch["discounted_reward"] = gae
+                #self.remote_memory.add(batch)
+  
+
+        #-----------
+        losses = []
+      
+        
+        v_targs = gae_li + n_v
+
+        #print(v_targs.size())→10x32x1
+        for i in range(storycount):
+            #v = self.critic.predict(self.memory.edges,self.memory.features)
+            #n_v = self.critic.predict(self.memory.next_edges,self.memory.next_features)
+            old_vpred = v[i]
+            vpred = n_v[i]
+
+            self.new_critic_optimizer.zero_grad()
+
+            vpred_clipped = old_vpred + torch.clamp(vpred - old_vpred, min=-cliprange, max=cliprange)
+
+            # 損失の計算
+            loss1 = (v_targs[i] - vpred).pow(2)
+            loss2 = (v_targs[i] - vpred_clipped).pow(2)
+            loss = torch.max(loss1, loss2).mean()
+
+            # パラメータの更新
+            self.new_critic_optimizer.step()
+
+            loss.backward(retain_graph=True)
             
 
+            # 勾配のクリッピング
+            torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 0.5)
+
+            losses.append(loss)
+            #print("optim",self.critic.parameters())
+
+            #for name, param in self.critic.named_parameters():
+            #    if param.grad is not None:
+            #        print(f"{name} grad: {param.grad}")
+            #    else:
+            #       print(f"{name} grad is None")
+            #print("done critic")
+        state_dict = self.new_critic.state_dict()
+            #self.critic = TimeSeriesGCN(self.input_size)
+            # モデルBに state_dict をロード
+        self.critic.load_state_dict(state_dict)
+        
+            #print("critic",loss.grad)
+
+            #with tf.GradientTape() as tape:
+
+            #   vpred = n_v[i]
+            #    vpred_clipped = old_vpred + torch.clamp(
+            #        vpred - old_vpred, min=-cliprange, max=cliprange)
+
+            #    loss = tf.maximum(
+            #        tf.square(tf.convert_to_tensor((v_targs[i] - vpred).detach().numpy())),
+            #        tf.square(tf.convert_to_tensor((v_targs[i] - vpred_clipped).detach().numpy())))
+
+            #    loss = tf.reduce_mean(loss)
+
+            #grads = tape.gradient(loss, self.critc.trainable_variables)
+            #grads, _ = tf.clip_by_global_norm(grads, 0.5)
+            #self.critic.optimizer.apply_gradients(
+            #    zip(grads, self.critic.trainable_variables))
+
+            #losses.append(loss)
+
+            #np.array(losses).mean() 
+
+        
+        
+        for i in range(storycount):
+            old_policy = self.memory.actions[i]
+            self.actor_optimizer.zero_grad()
+            #gae_t = batche_li[]
+
+            # 新しいポリシーの計算
+            new_policy,_ =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i])
+
+            # old/newの比率の計算
+            #print("new",new_policy[0])
+            #print("dict",self.new_actor.state_dict())
+
+            #print(old_policy[0])
+            #print("dict",self.actor.state_dict())
+   
+            ratio =torch.exp(torch.log(new_policy+1e-7) - torch.log(old_policy+1e-7))
+            #ratio = torch.where(torch.isnan(ratio), torch.full_like(ratio, 1.0), ratio)
+
+            # クリッピング
+            ratio_clipped = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
+
+            # 損失の計算
+            loss_unclipped = ratio * gae_li[i]
+            loss_clipped = ratio_clipped * gae_li[i]
+        
+            #print("GAE",gae_li.size())
+            #print("ratio",ratio)
+            #print("ratio",gae_li[i])
+            #print("loss_clip",loss_clipped)
+            # 最小値を取る
+            loss = torch.min(loss_unclipped, loss_clipped)
+            
+            # 最大化のために-1を掛ける
+            loss = -loss.mean()
+            #print("loss",loss)
+          
+            # 勾配の計算と適用
+            loss.backward(retain_graph=True)
+            self.new_actor_optimizer.step()
+
+           
+
+            #with tf.GradientTape() as tape:
+            #    new_policy = self.actor(self.memory.edges[i],self.memory.features[i])
+                #old/new
+            #    ratio = tf.exp(np.log(old_policy)-np.log(new_policy))
+            #    ratio_clipped = torch.clamp(
+            #        ratio, min=1 - cliprange, max=1 + cliprange)
+
+            #    loss_unclipped = ratio * gae[i]
+            #    loss_clipped = ratio_clipped * gae[i]
+                    
+                #: clipされていない代理目的関数とclipped代理目的関数の小さい方を採用
+            #    loss = tf.minimum(loss_unclipped, loss_clipped)
+                    
+                #: 最大化したいので-1を掛ける
+            #    loss = -1 * tf.reduce_mean(loss)
 
 
+            #grads = tape.gradient(loss, self.policy.trainable_variables)
+            #self.policy.optimizer.apply_gradients(
+            #  zip(grads, self.policy.trainable_variables)) """
+           
 
-        if self.count == self.target_update_steps:
-            self.critic_target.load_state_dict(self.critic.state_dict())
-            self.count = 0
-        else:
-            self.count += 1
+        #with torch.no_grad():
+           
+        #    self.actor.T -= 0.01 * self.actor.T.grad
+       #     self.actor.e -= 10000 * self.actor.e.grad
+       #     self.actor.r -= 0.01 * self.actor.r.grad
+       #     self.actor.W -= 0.01 * self.actor.W.grad
 
-        self.memory.clear()
+   
+        state_dict = self.new_actor.state_dict()
+        # モデルBに state_dict をロード
+        self.actor.load_state_dict(state_dict)
+        
+        print("critic",loss.grad)
 
         return self.actor.T,self.actor.e,self.actor.r,self.actor.W,self.alpha,self.beta
     
@@ -278,7 +280,8 @@ class COMA:
 
 def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
 
-    actor = Actor(T,e,r,w,persona)
+    actor = actor = Actor(T,e,r,w,persona)
+    print("actorparam",actor.state_dict())
   
     #personaはじめは均等
     policy_ration = torch.empty(step,len(persona[0]),agent_num)
@@ -289,7 +292,7 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
                     load_data.adj[base_time+time].clone(),
                     persona
                     )
-
+  
         policy_ration[time] = polic_prob
 
 
@@ -318,15 +321,16 @@ def execute_data():
     #alpha,betaの読み込み
        #ペルソナの取り出し
     #ペルソナの数[3,4,5,6,8,12]
+    path_n = "gamma/complete/"
     persona_num = 4
-    path = "gamma{}.npy".format(int(persona_num))
+    path = path_n+"gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
     persona_ration = torch.from_numpy(persona_ration).to(device)
 
 
     #print(persona_ration)
-    path = "means{}.npy".format(int(persona_num))
+    path = path_n+"means{}.npy".format(int(persona_num))
     means = np.load(path)
     means = means.astype("float32")
     means = torch.from_numpy(means).to(device)
@@ -335,16 +339,20 @@ def execute_data():
     print("means",means)
     print("alpha",alpha)
     print("beta",beta)
-    LEARNED_TIME = 3
+    LEARNED_TIME = 4
     GENERATE_TIME = 5
     TOTAL_TIME = 10
     load_data = init_real_data()
     agent_num = len(load_data.adj[LEARNED_TIME])
     input_size = 81580
-    action_dim = 500
-    gamma = 0.90
-    lr_a = 0.1
-    lr_c = 0.005
+
+    action_dim = 32
+    N = 32
+    #パラメータ
+    gamma = 0.99
+    lamda = 0.95
+    lr_a = 0.01
+    lr_c = 0.01
     target_update_steps = 8
     alpha = alpha
 
@@ -359,32 +367,36 @@ def execute_data():
     )
 
     r = np.array(
-        [1.0 for i in range(persona_num)],
+        [0.8 for i in range(persona_num)],
         dtype=np.float32,
     )
 
     w = np.array(
-        [1.0 for i in range(persona_num)],
+        [0.8 for i in range(persona_num)],
         dtype=np.float32,
     )
 
     persona = persona_ration
 
-    N = len(alpha)
 
     episodes = 32
-    story_count = 10
+    story_count = 32
     ln = 0
+    ln_sub = 0
     sub_ln = []
     flag = True
     episode = 0
-
-
+    count = 0
+    episodes_reward = []
+    persona_parms =[]
+    persona_parms.append(torch.from_numpy(np.array([T,e,r,w])))
+    persona_rations =[]
+    persona_rations.append(persona_ration)
 
 
     #n_episodes = 10000
 
-    while flag or ln_sub <= 1:
+    while flag and ln_sub <= 1:
         
 
 
@@ -398,6 +410,7 @@ def execute_data():
             print("-------------------------")
             #mixture_ratio = persona_ration
             #softの時は外す
+            #mixture_ratio:混合比率
             mixture_ratio = e_step(
                 agent_num=agent_num,
                 load_data=load_data,
@@ -432,27 +445,48 @@ def execute_data():
                 persona=mixture_ratio
                 )
         episode_reward = 0
-        episodes_reward = []
-        agents = COMA(obs,agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,story_count)
+        trajectory = torch.empty([story_count,2])
+        agents = PPO(obs,agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,story_count)
 
 
 
         for i in range(story_count):
 
             edges,feature = obs.state()
-            feat,action = agents.get_actions(i,edges,feature)
+            feat,action_probs = agents.get_actions(i,edges,feature)
+            #print("0",action_probs[action_probs<0].sum())
+            #print("1",action_probs[action_probs>1].sum())
+            #print("nan",action_probs[action_probs=="Nan"].sum())
+            #->nanいる
+            action = action_probs.bernoulli()
+            #with torch.no_grad():
+            agents.memory.actions[i]=action_probs.clone()
+            agents.memory.edges[i] = edges.clone()
+            agents.memory.features[i] = feature.clone()
+
             reward = obs.step(feat,action)
-            agents.memory.reward[i]=reward
-            episode_reward += reward.sum()
+        
+            agents.memory.next_edges[i]=action.clone()
+            agents.memory.next_features[i]=feat.clone()
+
+            agents.memory.reward[i]=reward.clone()
+            episode_reward = episode_reward + reward.sum()
 
         episodes_reward.append(episode_reward)
 
 
-        agents.train()
-        T = agents.actor.T
-        e = agents.actor.e
-        r = agents.actor.r
-        w = agents.actor.W
+
+        agents.train(gamma,lamda,persona_parms)
+        count +=1
+
+        T = agents.new_actor.T
+        e = agents.new_actor.e
+        r = agents.new_actor.r.squeeze(1)
+        w = agents.new_actor.W.squeeze(1)
+  
+     
+        persona_parms.append(torch.from_numpy(np.array([T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()])))
+        persona_rations.append(mixture_ratio)
         ln_before = ln
         ln = agents.ln
         ln_sub =abs(ln-ln_before)
@@ -466,17 +500,17 @@ def execute_data():
         print("pr",mixture_ratio)
         if episode % 10 == 0:
             #print(reward)
+            print(episodes_reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
-            print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
-        if episode >= 200:
+        if episode >= 2:
             flag = False
+        #print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
     calc_log = np.zeros((10, 5))
     calc_nll_log = np.zeros((10, 5))
     attr_calc_log = np.zeros((10, 5))
     attr_calc_nll_log = np.zeros((10, 5))
     print(sub_ln)
-    agents.critic_target.train() 
-    agents.critic.train() 
+
     for count in range(10):
         obs.reset(
             load_data.adj[LEARNED_TIME].clone(),
@@ -502,9 +536,8 @@ def execute_data():
 
             reward = obs.step(feat,action)
 
+            #予測値
             target_prob = torch.ravel(feat).to("cpu")
-         
-            gc.collect()
             detach_attr = (
                 torch.ravel(load_data.feature[GENERATE_TIME + t])
                 .detach()

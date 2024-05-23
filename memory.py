@@ -6,19 +6,21 @@ class Memory:
         self.action_dim = action_dim
         self.story_count = story_count
         self.actions = torch.empty([self.story_count,self.agent_num,self.agent_num])
-        self.observation_edges = torch.empty([self.story_count,self.agent_num,self.agent_num])
-        self.observation_features = torch.empty([self.story_count,self.agent_num, 3854])
+        self.edges = torch.empty([self.story_count,self.agent_num,self.agent_num])
+        self.features = torch.empty([self.story_count,self.agent_num, 2411])
+        self.next_edges = torch.empty([self.story_count,self.agent_num,self.agent_num])
+        self.next_features = torch.empty([self.story_count,self.agent_num, 2411])
         #エージェントの数だけ行数がある
         self.pi = torch.empty([self.story_count,self.agent_num,self.agent_num])
-        self.reward = torch.empty([self.story_count,self.agent_num,1])
+        self.reward = torch.empty([self.story_count,agent_num,1])
         #エージェントの数だけフラグがある
 
 
 #torch.tenosrでtenosrにする
     def get(self):
         actions = self.actions
-        self.observation_edges
-        self.observation_features
+        self.edges
+        self.features
 
         pi = torch.empty([self.agent_num,self.story_count,self.agent_num])
         for i in range(self.agent_num):
@@ -31,12 +33,12 @@ class Memory:
         #print(reward.shape)
         #reward (1x4)報酬
         #print(reward)
-        return actions, self.observation_edges, self.observation_features, pi, self.reward
+        return actions, self.edges, self.features, pi, self.reward
     
     def test(self,t):
         actions = self.actions
-        self.observation_edges
-        self.observation_features
+        self.edges
+        self.features
 
         pi = torch.empty([self.agent_num,self.agent_num])
     
@@ -53,8 +55,12 @@ class Memory:
 #初期化の関数
     def clear(self):
         self.actions = torch.empty([self.story_count,self.agent_num,self.agent_num])
-        self.observation_edges = torch.empty([self.story_count,self.agent_num,self.agent_num])
-        self.observation_features = torch.empty([self.story_count,self.agent_num,3854])
+        self.edges = torch.empty([self.story_count,self.agent_num,self.agent_num])
+        self.features = torch.empty([self.story_count,self.agent_num,2411])
+        #NIPS 2411
+        #DBLP3854
         #エージェントの数だけ行数がある
         self.pi = torch.empty([self.story_count,self.agent_num,self.agent_num])
         self.reward = torch.empty([self.story_count,self.agent_num,1])
+        self.next_edges = torch.empty([self.story_count,self.agent_num,self.agent_num])
+        self.next_features = torch.empty([self.story_count,self.agent_num, 2411])

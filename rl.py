@@ -42,7 +42,7 @@ def execute_data() -> None:
     #alpha,betaの読み込み
     np_alpha = []
     np_beta = []
-    with open("model.param.data.fast", "r") as f:
+    with open("gamma/complete/model.param.data.fast", "r") as f:
         lines = f.readlines()
         for index, line in enumerate(
             tqdm(lines, desc="load data", postfix="range", ncols=80)
@@ -99,6 +99,7 @@ def execute_data() -> None:
 
 
     field = Env(
+        N,
         edges=load_data.adj[LEARNED_TIME].clone(),
         feature=load_data.feature[LEARNED_TIME].clone(),
         temper=T,
