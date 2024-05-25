@@ -33,7 +33,7 @@ class Env:
 
         # 特徴量の正規化
         norm = self.feature.norm(dim=1)[:, None] + 1e-8
-        self.feature = self.feature.div_(norm)
+        self.feature = self.feature/norm
         self.feature_t = self.feature.t()
         self.sim = 0
         self.costs = 0
@@ -43,27 +43,25 @@ class Env:
 
 
 
-    def reset(self, edges, attributes,alpha,beta,persona):
-        self.alpha = alpha.detach().clone().requires_grad_(True)
-        #self.alpha = alpha.requires_grad_(True)
-        self.beta = beta.detach().clone().requires_grad_(True)
-        #self.beta = beta.requires_grad_(True)
+    def reset(self, edges, attributes,persona):
         self.persona = persona.detach().clone().requires_grad_(True)
         #self.persona = persona.requires_grad_(True)
         self.edges = edges
         self.feature = attributes
         # 特徴量の正規化
         norm = self.feature.norm(dim=1)[:, None] + 1e-8
-        self.feature = self.feature.div(norm)
+        self.feature = self.feature/norm
+        self.feature = self.feature
         self.feature_t = self.feature.t()
 
         return self.edges,self.feature
     #一つ進める
 
-    def step(self,feature,action):
-        next_mat = action
-        self.edges = next_mat
-        next_feature = feature
+    def step(self,next_feature,next_action):
+        self.edges = next_action
+        self.feature = next_feature
+        norm = self.feature.norm(dim=1)[:, None] + 1e-8
+        self.feature = self.feature/norm
         self.feature = next_feature
         self.feature_t = self.feature.t()
         dot_product = torch.mm(self.feature, self.feature_t).to(device)
@@ -79,14 +77,14 @@ class Env:
         self.costs = costs.sum()
         self.persona_alpha = persona_alpha
         self.persona_beta = persona_beta
+        
         return reward
-
-
+    
 
 
     #隣接行列を返す
     def state(self):
         #neighbor_mat = torch.mul(self.edges, self.edges)
-        neighbor_mat = torch.mul(self.edges, self.edges)
+        #neighbor_mat = torch.mul(self.edges, self.edges)
 
-        return neighbor_mat, self.feature
+        return self.edges, self.feature

@@ -115,9 +115,11 @@ if __name__ == "__main__":
     
     transformer = MinMaxScaler()
     norm = transformer.fit_transform(data_dblp)
+    print(norm)
     data_norm = data_dblp.copy(deep=True)
     data_norm["alpha"] = norm[:,0]
     data_norm["beta"] = norm[:,1]
+    
     alpha,beta = tolist(path)
     data = pd.DataFrame({"alpha":alpha,"beta":beta})
     dblp_array = np.array([data_norm["alpha"].tolist(),
@@ -165,9 +167,10 @@ if __name__ == "__main__":
     for i in mean:
         means.append(np.array(i))
     gamma,means = em_algorithm(32,num,em,means,sigma)
+    original_means = transformer.inverse_transform(means)
     print(gamma)
     print(np.argmax(gamma,axis=1))
-    print(means)
+    print("orginal-mean",original_means)
     np.argmax(gamma,axis=1)
     np.save(
     "gamma/complete/gamma{}".format(num), # データを保存するファイル名
@@ -175,6 +178,6 @@ if __name__ == "__main__":
     )
     np.save(
     "gamma/complete/means{}".format(num), # データを保存するファイル名
-    means,  # 配列型オブジェクト（listやnp.array)
+    original_means,  # 配列型オブジェクト（listやnp.array)
     )
     

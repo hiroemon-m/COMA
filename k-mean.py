@@ -112,7 +112,7 @@ def tolist(data) -> None:
 if __name__ == "__main__": 
     path_n = "gamma/complete/"
     path =path_n + "model.param.data.fast"
-    num = 16
+    num = 4
     N = 32
     dblp_alpha,dblp_beta = tolist(path)
     data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta})
@@ -150,16 +150,16 @@ if __name__ == "__main__":
     for i in mean:
         means.append(np.array(i))
 
-    print(means)
+    print("mean",means)
 
     np.save(
     #"gamma/imcomplete/gamma{}".format(num), # データを保存するファイル名
-    path_n+"gamma{}".format(num), # データを保存するファイル名
+    path_n+"k-mean/gamma{}".format(num), # データを保存するファイル名
     persona_tnsor,  # 配列型オブジェクト（listやnp.array)
     )
     np.save(
     #"gamma/imcomplete/means{}".format(num), # データを保存するファイル名
-     path_n+"means{}".format(num), # データを保存するファイル名
+     path_n+"k-mean/means{}".format(num), # データを保存するファイル名
     means,  # 配列型オブジェクト（listやnp.array)
     )
     
