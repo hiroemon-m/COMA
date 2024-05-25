@@ -108,8 +108,8 @@ class Actor(nn.Module):
     
             probability =  torch.clamp(probability + x ,min=0,max=1)
             #属性の調整
-            #feat = torch.where(feat>0,1,feat)
-            #feat = torch.where(feat>1,1,feat)
+            feat = torch.where(feat>0,1,feat)
+            feat = torch.where(feat>1,1,feat)
 
         return probability, feat
 
@@ -165,8 +165,8 @@ class Actor(nn.Module):
         #print("pr",probability)
         #print(probability_tensor)
                         #属性の調整
-            #feat = torch.where(feat>0,1,feat)
-            #feat = torch.where(feat>1,1,feat)
+            feat = torch.where(feat>0,1,feat)
+            feat = torch.where(feat>1,1,feat)
 
     
 
