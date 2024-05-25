@@ -53,8 +53,6 @@ class PPO:
 
     def get_actions(self, edges,feat):
         
-        #with torch.no_grad():
-        
         prob,feat = self.actor.predict(feat,edges)
     
         return feat,prob
@@ -108,7 +106,9 @@ class PPO:
         for i in range(storycount):
      
             old_policy = self.memory.probs[i]
+            print("F",i,self.memory.features[i].sum())
             new_policy,_ =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i])
+            print("np",torch.isnan(new_policy).sum())
             ratio =torch.exp(torch.log(new_policy+1e-7) - torch.log(old_policy+1e-7))
             ratio_clipped = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
             G = G_r[i] - baseline[i]
@@ -231,7 +231,7 @@ def execute_data():
     action_dim = 32
     N = 32
     #パラメータ
-    gamma = 0.95
+    gamma = 0.90
     lamda = 0.95
     lr_a = 0.01
     lr_c = 0.01
@@ -241,8 +241,8 @@ def execute_data():
     beta = beta
     T = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
     e = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    r = torch.tensor([0.8 for _ in range(persona_num)], dtype=torch.float32)
-    w = torch.tensor([0.8 for _ in range(persona_num)], dtype=torch.float32)
+    r = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    w = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
 
 
     story_count = 5
@@ -325,7 +325,6 @@ def execute_data():
         episode_reward = 0
         trajectory = torch.empty([story_count,2])
         agents = PPO(obs,agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,story_count)
-        print("pr",mixture_ratio)
         for i in range(story_count):
 
             edges,feature = obs.state()
@@ -334,8 +333,11 @@ def execute_data():
             #print("1",action_probs[action_probs>1].sum())
             #print("nan",action_probs[action_probs=="Nan"].sum())
             #->nanいる
-        
+            print("debag",i,feat)
             action = action_probs.bernoulli()
+            #属性値を確率分布の出力と考えているので、ベルヌーイ分布で値予測
+            #feat = torch.clamp(feat,min=0)
+
         
             reward = obs.step(feat,action)
             #sotry_count,agentnum,1→各行動の報酬のtonsorを保持した方が勾配計算うまくいくかも
@@ -408,16 +410,16 @@ def execute_data():
             edges, feature = obs.state()
             #print("stae",neighbor_state)
             #print("feat",feat)
-            feat,prob = agents.get_actions(
+            #featもprobも確率
+            prob ,feat ,feat_bernoulli = agents.actor.test(
               edges,feature
             )
             del edges, feature
            
 
-            reward = obs.step(feat,prob.bernoulli())
+            reward = obs.step(feat_bernoulli,prob.bernoulli())
 
-            #属性値の評価
-     
+            #属性値の評価 
             target_prob = torch.ravel(feat).to("cpu")
             detach_attr = (
                 torch.ravel(load_data.feature[GENERATE_TIME + t])
@@ -428,7 +430,8 @@ def execute_data():
             pos_attr = detach_attr.numpy()
             attr_numpy = np.concatenate([pos_attr], 0)
             target_prob = target_prob.to("cpu").detach().numpy()
-
+            print("pre",target_prob.sum())
+            print("tar",pos_attr.sum())
             attr_predict_probs = np.concatenate([target_prob], 0)
             try:
                 # NLLを計算

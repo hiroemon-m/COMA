@@ -44,10 +44,11 @@ class Actor(nn.Module):
             r = r + 1e-8
             feat = r * attributes + tmp_tensor * (1 - r)
             x = torch.mm(feat, feat.t())
-            x = x.div(self.T[i])+1e-8
-            x = torch.clamp(x, max=78)
+            x = x.div(self.T[i]+1e-8)
+            x = torch.clamp(x, max=79)
             x = torch.exp(x)
             x = x*self.e[i]
+        
 
             #x = torch.clamp(x, max=75)
             #x=x.exp().mul(self.e[i])
@@ -74,6 +75,7 @@ class Actor(nn.Module):
         norm = attributes.norm(dim=1)[:, None] 
         norm = norm + 1e-8
         attributes_normalized = attributes/norm
+
         #print(self.persona[:,1])
         #print(self.persona)
         # インプレース操作を回避するために新しい変数を使用して新しいテンソルを作成
@@ -83,7 +85,6 @@ class Actor(nn.Module):
         #edges = (edges > 0).float().to(device)
 
         probability = 0
-        
         for i in range(len(self.persona[0])):
  
             tmp_tensor = self.W[i] * torch.matmul(edges, attributes_normalized)
@@ -91,12 +92,14 @@ class Actor(nn.Module):
             r = r + 1e-8
             feat = r * attributes + tmp_tensor * (1 - r)
             #print("feat",feat)
-            x = torch.mm(feat, feat.t())
-            x = x.div(self.T[i])+1e-8
-            x = torch.clamp(x, max=78)
-            x = torch.exp(x)
 
+            x = torch.matmul(feat, feat.t())
+            x = x.div(self.T[i]+1e-8)
+            x = torch.clamp(x, max=79)
+            x = torch.exp(x)
             x = x*self.e[i]
+
+            #print("nan",x,torch.isnan(x).sum())
 
             # Min-Max スケーリング
             min_values = torch.min(x, dim=0).values
@@ -104,14 +107,24 @@ class Actor(nn.Module):
             x = (x - min_values) / ((max_values - min_values) + 1e-8)
      
             x = torch.tanh(x)
+            #print("nan1",torch.isnan(x).sum())
+
+
             x = self.persona[:,i]*x
     
+            #print("nan2",torch.isnan(x).sum())
+    
             probability =  torch.clamp(probability + x ,min=0,max=1)
-            #属性の調整
-            feat = torch.where(feat>0,1,feat)
-            feat = torch.where(feat>1,1,feat)
+            #属性の方策
+        feat_sig = torch.tanh(feat)
+        feat_sig = torch.clamp(feat_sig,min=0)
+        feat_ber = feat_sig.bernoulli()
+            #print("Feat",feat_ber)
 
-        return probability, feat
+            #feat = torch.where(feat>0,1,feat)
+            #feat = torch.where(feat>1,1,feat)
+
+        return probability, feat_ber
 
 
 
@@ -139,14 +152,74 @@ class Actor(nn.Module):
             feat = r * attributes + tmp_tensor * (1 - r)
                 #print("feat",feat)
             x = torch.mm(feat, feat.t())
-            x = x.div(self.T[i])+1e-8
+            x = x.div(self.T[i]+1e-8)
             #x = torch.clamp(x, max=75)
             #print("nan",x[x=="Nan"].sum())
             #print(x)
             #x = torch.exp(x)
                 #expm1
                 #print(torch.max(x))
-            x = torch.clamp(x, max=78)
+            x = torch.clamp(x, max=79)
+            x = torch.exp(x)
+            x = x*self.e[i]
+
+                # Min-Max スケーリング
+            min_values = torch.min(x, dim=0).values
+            max_values = torch.max(x, dim=0).values
+            x = (x - min_values) / ((max_values - min_values) + 1e-8)
+            x = torch.tanh(x)
+            x = self.persona[:,i]*x
+
+            #print(y)
+            probability =  torch.clamp(probability + x ,min=0,max=1)
+        #probability_tensor =  probability.clone()
+        #print("pr",probability)
+        #print(probability_tensor)
+                        #属性の調整
+
+        feat_sig = torch.tanh(feat)
+        feat_sig = torch.clamp(feat_sig,min=0)
+        feat_ber = feat_sig.bernoulli()
+  
+            #feat = torch.where(feat>0,1,feat)
+            #feat = torch.where(feat>1,1,feat)
+
+
+    
+
+        return probability, feat_ber
+
+    def test(self,edges,attributes):
+        
+        norm = attributes.norm(dim=1)[:, None] 
+        norm = norm + 1e-8
+        attributes_normalized = attributes.div(norm)
+
+            #print(self.persona[:,1])
+            #print(self.persona)
+        edges_float = edges.float()
+        edge_index = edges_float > 0
+        edges =edge_index.float().to(device)
+        #edges = (edges > 0).float().to(device)
+        probability = 0
+        probability_tensor = torch.empty(len(self.persona[1]),len(self.persona[1]),requires_grad=True)
+            
+        for i in range(len(self.persona[0])):
+    
+            tmp_tensor = self.W[i] * torch.matmul(edges, attributes_normalized)
+            r = self.r[i]
+            r = r + 1e-8
+            feat = r * attributes + tmp_tensor * (1 - r)
+                #print("feat",feat)
+            x = torch.mm(feat, feat.t())
+            x = x.div(self.T[i]+1e-8)
+            #x = torch.clamp(x, max=75)
+            #print("nan",x[x=="Nan"].sum())
+            #print(x)
+            #x = torch.exp(x)
+                #expm1
+                #print(torch.max(x))
+            x = torch.clamp(x, max=79)
             x = torch.exp(x)
             x = x*self.e[i]
   
@@ -165,11 +238,19 @@ class Actor(nn.Module):
         #print("pr",probability)
         #print(probability_tensor)
                         #属性の調整
-            feat = torch.where(feat>0,1,feat)
-            feat = torch.where(feat>1,1,feat)
+
+        feat_sig = torch.tanh(feat)
+        feat_sig = torch.clamp(feat_sig,min=0)
+        feat_ber = feat_sig.bernoulli()
+
+  
+            #feat = torch.where(feat>0,1,feat)
+            #feat = torch.where(feat>1,1,feat)
 
     
 
-        return probability, feat
+        return probability, feat_sig,feat_ber
+
+
 
 
