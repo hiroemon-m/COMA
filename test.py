@@ -231,7 +231,7 @@ def execute_data():
     action_dim = 32
     N = 32
     #パラメータ
-    gamma = 0.90
+    gamma = 0.95
     lamda = 0.95
     lr_a = 0.01
     lr_c = 0.01
@@ -240,9 +240,9 @@ def execute_data():
 
     beta = beta
     T = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    e = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    e = torch.tensor([0.8 for _ in range(persona_num)], dtype=torch.float32)
     r = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    w = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    w = torch.tensor([0.8 for _ in range(persona_num)], dtype=torch.float32)
 
 
     story_count = 5
