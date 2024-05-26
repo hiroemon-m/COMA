@@ -58,6 +58,8 @@ class Env:
     #一つ進める
 
     def step(self,next_feature,next_action):
+        print("ac",next_action,next_action.sum())
+        print("fe",next_feature,next_feature.sum())
         self.edges = next_action
         self.feature = next_feature
         norm = self.feature.norm(dim=1)[:, None] + 1e-8

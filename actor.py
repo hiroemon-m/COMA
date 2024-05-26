@@ -75,6 +75,7 @@ class Actor(nn.Module):
         norm = attributes.norm(dim=1)[:, None] 
         norm = norm + 1e-8
         attributes_normalized = attributes/norm
+        attr= 0
 
         #print(self.persona[:,1])
         #print(self.persona)
@@ -111,12 +112,13 @@ class Actor(nn.Module):
 
 
             x = self.persona[:,i]*x
+            attr = attr + self.persona[:,i].view(32,-1)*feat
     
             #print("nan2",torch.isnan(x).sum())
     
             probability =  torch.clamp(probability + x ,min=0,max=1)
             #属性の方策
-        feat_sig = torch.tanh(feat)
+        feat_sig = torch.tanh(attr)
         feat_sig = torch.clamp(feat_sig,min=0)
         feat_ber = feat_sig.bernoulli()
             #print("Feat",feat_ber)
@@ -142,6 +144,7 @@ class Actor(nn.Module):
         edges =edge_index.float().to(device)
         #edges = (edges > 0).float().to(device)
         probability = 0
+        attr = 0
         probability_tensor = torch.empty(len(self.persona[1]),len(self.persona[1]),requires_grad=True)
             
         for i in range(len(self.persona[0])):
@@ -149,7 +152,7 @@ class Actor(nn.Module):
             tmp_tensor = self.W[i] * torch.matmul(edges, attributes_normalized)
             r = self.r[i]
             r = r + 1e-8
-            feat = r * attributes + tmp_tensor * (1 - r)
+            feat = r * attr + tmp_tensor * (1 - r)
                 #print("feat",feat)
             x = torch.mm(feat, feat.t())
             x = x.div(self.T[i]+1e-8)
@@ -169,6 +172,7 @@ class Actor(nn.Module):
             x = (x - min_values) / ((max_values - min_values) + 1e-8)
             x = torch.tanh(x)
             x = self.persona[:,i]*x
+            attr = attributes + self.persona[:,i].view(-1,1)*feat
 
             #print(y)
             probability =  torch.clamp(probability + x ,min=0,max=1)
@@ -177,9 +181,10 @@ class Actor(nn.Module):
         #print(probability_tensor)
                         #属性の調整
 
-        feat_sig = torch.tanh(feat)
+        feat_sig = torch.tanh(attr)
         feat_sig = torch.clamp(feat_sig,min=0)
         feat_ber = feat_sig.bernoulli()
+        print("feat1",feat_ber.sum())
   
             #feat = torch.where(feat>0,1,feat)
             #feat = torch.where(feat>1,1,feat)
@@ -202,6 +207,7 @@ class Actor(nn.Module):
         edges =edge_index.float().to(device)
         #edges = (edges > 0).float().to(device)
         probability = 0
+        attr = 0
         probability_tensor = torch.empty(len(self.persona[1]),len(self.persona[1]),requires_grad=True)
             
         for i in range(len(self.persona[0])):
@@ -231,6 +237,7 @@ class Actor(nn.Module):
             x = (x - min_values) / ((max_values - min_values) + 1e-8)
             x = torch.tanh(x)
             x = self.persona[:,i]*x
+            attr = attr + self.persona[:,i].view(-1,1)*feat
 
             #print(y)
             probability =  torch.clamp(probability + x ,min=0,max=1)
@@ -239,7 +246,7 @@ class Actor(nn.Module):
         #print(probability_tensor)
                         #属性の調整
 
-        feat_sig = torch.tanh(feat)
+        feat_sig = torch.tanh(attr)
         feat_sig = torch.clamp(feat_sig,min=0)
         feat_ber = feat_sig.bernoulli()
 

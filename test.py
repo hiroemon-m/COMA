@@ -106,12 +106,12 @@ class PPO:
         for i in range(storycount):
      
             old_policy = self.memory.probs[i]
-            print("F",i,self.memory.features[i].sum())
+          
             new_policy,_ =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i])
-            print("np",torch.isnan(new_policy).sum())
             ratio =torch.exp(torch.log(new_policy+1e-7) - torch.log(old_policy+1e-7))
             ratio_clipped = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
             G = G_r[i] - baseline[i]
+            print("GGG",G)
         
             loss_unclipped = ratio * G
             loss_clipped = ratio_clipped * G
@@ -131,11 +131,12 @@ class PPO:
                 if param.grad is not None:
                     param.grad.data = param.grad.data / (param.grad.data.norm() + 1e-6)
 
-            #for name, param in self.new_actor.named_parameters():
-            #    if param.grad is not None:
-            #        print(f"{name} grad: {param.grad}")
-            #    else:
-             #        print(f"{name} grad is None")
+            for name, param in self.new_actor.named_parameters():
+                if param.grad is not None:
+                    print(f"{name} grad: {param.grad}")
+                else:
+                    print(f"{name} grad is None")
+            print("loss",loss)
 
             self.new_actor_optimizer.step()
             losses.append(loss)
