@@ -125,11 +125,11 @@ class PPO:
                 if param.grad is not None:
                     param.grad.data = param.grad.data / (param.grad.data.norm() + 1e-6)
 
-            for name, param in self.new_actor.named_parameters():
-                if param.grad is not None:
-                    print(f"{i}:{name} grad: {param.grad}")
-                else:
-                    print(f"{i}:{name} grad is None")
+            #for name, param in self.new_actor.named_parameters():
+            #    if param.grad is not None:
+            #        print(f"{i}:{name} grad: {param.grad}")
+            #    else:
+            #        print(f"{i}:{name} grad is None")
 
       
 
@@ -328,17 +328,9 @@ def execute_data():
 
             edges,feature = obs.state()
             feat,action_probs = agents.get_actions(edges,feature,i)
-           
-            #print("0",action_probs[action_probs<0].sum())
-            #print("1",action_probs[action_probs>1].sum())
-            #print("nan",action_probs[action_probs=="Nan"].sum())
-            #->nanいる
-   
             action = action_probs.bernoulli()
             #属性値を確率分布の出力と考えているので、ベルヌーイ分布で値予測
             #feat = torch.clamp(feat,min=0)
-
-        
             reward = obs.step(feat,action,i)
    
             # 勾配を計算する
@@ -358,12 +350,8 @@ def execute_data():
         print("epsiode_rewaerd",episodes_reward[-1])
         T,e,r,q,w= agents.train(gamma)
         #new_T,new_e,new_r,new_w = agents.train_a(memory,gamma)
-        print("r",r,"q",q)
         count +=1
 
-
-  
-     
 
         ln_before = ln
         ln = agents.ln
@@ -374,12 +362,11 @@ def execute_data():
         episode += 1
     
 
-   
         if episode % 10 == 0:
             #print(reward)
             print(episodes_reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
-        if episode >=100:
+        if episode >=50:
             flag = False
         #print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
     calc_log = np.zeros((10, 5))
