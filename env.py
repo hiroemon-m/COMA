@@ -58,8 +58,7 @@ class Env:
     #一つ進める
 
     def step(self,next_feature,next_action):
-        print("ac",next_action,next_action.sum())
-        print("fe",next_feature,next_feature.sum())
+
         self.edges = next_action
         self.feature = next_feature
         norm = self.feature.norm(dim=1)[:, None] + 1e-8
@@ -67,8 +66,6 @@ class Env:
         self.feature = next_feature
         self.feature_t = self.feature.t()
         dot_product = torch.mm(self.feature, self.feature_t).to(device)
-        print(dot_product.size())
-        print(self.edges.size())
         sim = torch.mul(self.edges,dot_product).sum(1)
         persona_alpha = torch.mm(self.persona,self.alpha.view(self.persona.size()[1],1))
         sim_alpha = sim.view(self.agent_num,1)*(persona_alpha.view(self.agent_num,1))

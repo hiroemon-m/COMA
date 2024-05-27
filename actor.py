@@ -118,7 +118,7 @@ class Actor(nn.Module):
     
             probability =  torch.clamp(probability + x ,min=0,max=1)
             #属性の方策
-        feat_sig = torch.tanh(attr)
+        feat_sig = torch.sigmoid(attr)-0.5
         feat_sig = torch.clamp(feat_sig,min=0)
         feat_ber = feat_sig.bernoulli()
             #print("Feat",feat_ber)
@@ -181,7 +181,7 @@ class Actor(nn.Module):
         #print(probability_tensor)
                         #属性の調整
 
-        feat_sig = torch.tanh(attr)
+        feat_sig = torch.sigmoid(attr)-0.5
         feat_sig = torch.clamp(feat_sig,min=0)
         feat_ber = feat_sig.bernoulli()
         print("feat1",feat_ber.sum())
@@ -246,7 +246,7 @@ class Actor(nn.Module):
         #print(probability_tensor)
                         #属性の調整
 
-        feat_sig = torch.tanh(attr)
+        feat_sig = torch.sigmoid(attr)-0.5
         feat_sig = torch.clamp(feat_sig,min=0)
         feat_ber = feat_sig.bernoulli()
 
