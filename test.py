@@ -25,7 +25,7 @@ from actor import Actor
 device = config.select_device
 
 class PPO:
-    def __init__(self, obs,agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik,story_count):
+    def __init__(self, obs,agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,q,w,rik,story_count):
         self.agent_num = agent_num
         self.action_dim = action_dim
         self.input_size = input_size
@@ -39,28 +39,24 @@ class PPO:
         self.beta = self.obs.beta
         self.ln = 0
         self.count = 0
-        self.actor = Actor(T,e,r,w,rik)
-        self.new_actor = Actor(T,e,r,w,rik)
-
-
+        self.actor = Actor(T,e,r,q,w,rik)
+        self.new_actor = Actor(T,e,r,q,w,rik)
         #adamにモデルを登録
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_a) 
         self.new_actor_optimizer = torch.optim.Adam(self.new_actor.parameters(), lr=lr_a) 
+
+
+    def get_actions(self, edges,feat,time):
         
+        prob,feat = self.actor.predict(feat,edges,time)
+                # 損失を計算する（ここでは単純にsumを取る）
 
-
-
-
-    def get_actions(self, edges,feat):
-        
-        prob,feat = self.actor.predict(feat,edges)
-    
         return feat,prob
     
     
 
     
-    def train(self,gamma,lamda,param):
+    def train(self,gamma):
 
         #----G(t)-b(s)----
         G,loss = 0,0
@@ -84,7 +80,7 @@ class PPO:
                 #print("G",r,G[r])
                 #print("after",r,self.memory.reward[r])
 
-            print("G",r)
+    
 
 
         for i in range(len(self.memory.reward)):
@@ -105,20 +101,18 @@ class PPO:
         losses = []
         for i in range(storycount):
      
-            old_policy = self.memory.probs[i]
-          
-            new_policy,_ =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i])
+            old_policy = self.memory.probs[i]   
+            new_policy,_ =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i],i)
             ratio =torch.exp(torch.log(new_policy+1e-7) - torch.log(old_policy+1e-7))
             ratio_clipped = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
             G = G_r[i] - baseline[i]
-            print("GGG",G)
-        
-            loss_unclipped = ratio * G
-            loss_clipped = ratio_clipped * G
-            loss = torch.min(loss_unclipped, loss_clipped)
+    
+            reward_unclipped = ratio * G
+            reward_clipped = ratio_clipped * G
+            reward = torch.min(reward_unclipped, reward_clipped)
             # 最大化のために-1を掛ける
-            loss = -loss.mean()
-            #print("loss",loss)
+            loss = -reward.mean()
+
   
 
 
@@ -133,10 +127,11 @@ class PPO:
 
             for name, param in self.new_actor.named_parameters():
                 if param.grad is not None:
-                    print(f"{name} grad: {param.grad}")
+                    print(f"{i}:{name} grad: {param.grad}")
                 else:
-                    print(f"{name} grad is None")
-            print("loss",loss)
+                    print(f"{i}:{name} grad is None")
+
+      
 
             self.new_actor_optimizer.step()
             losses.append(loss)
@@ -150,50 +145,61 @@ class PPO:
             #print("w",self.new_actor.W.grad)
 
         
-        return self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.W,
+        return self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.q,self.new_actor.W,
     
 
 
-def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
+def e_step(agent_num,load_data,T,e,r,q,w,persona,step,base_time):
 
-    actor = actor = Actor(T,e,r,w,persona)
+    actor = actor = Actor(T,e,r,q,w,persona)
   
     #personaはじめは均等
-    policy_ration = torch.empty(step,len(persona[0]),agent_num,agent_num)
+    policy_ration = torch.empty(step,len(persona[0][0]),agent_num,agent_num)
 
     for time in range(step):
         polic_prob = actor.calc_ration(
                     load_data.feature[base_time+time].clone(),
                     load_data.adj[base_time+time].clone(),
-                    persona
+                    persona,
+                    time
                     )
      
         policy_ration[time] = polic_prob
+   
 
 
-    #時間に対して縮約 5,4,32,32 -> 4,32,32
-    top = torch.sum(policy_ration,dim = 0)
+    #時間に対して縮約 5,4,32,32 -> 5,4,32,32
+    top = policy_ration
     #print("top",top)
 
-    #分子　全ての時間　 あるペルソナに注目
-    rik = torch.empty(agent_num,len(persona[0]))
-    #分母 top時間に縮約、bottom:ペルソナについて縮約 4,32,32 -> 32,32
-    bottom = torch.sum(top,dim=0)
-     
-    #print("bo",bottom.size(),bottom)
 
-    # ration 4,32,32
+    #分子　全ての時間　 あるペルソナに注目
+    rik = torch.empty(step,agent_num,len(persona[0][0]))
+    #分母 top時間に縮約、bottom:ペルソナについて縮約 5,4,32,32 ->5,1,32,32
+    bottom = torch.sum(top,dim=1,keepdim=True)
+
+    print(top[0,:,0,0])
+
+    print(bottom[0,0,0,0])
+    top = torch.mean(top,dim=3)
+    bottom= torch.mean(bottom,dim=3)
+
+
+    # ration 5,4,32,32
     ration = top/(bottom+1e-7)
+
+    
     #ration = torch.div(top,bottom)
     # ぎょう方向に縮約
-    #print("行動単位のration",ration)
-    ration = torch.mean(ration,dim=2)
-    #print("ration",ration)
-    #print("ration",torch.sum(ration,dim=0))
+    #print("行動単位のration",ration
+    #5,4,32,32 -> 5,4,32,1
+    #ration = torch.mean(ration,dim=3)
 
-    for i in range(agent_num):
-        for k in range(len(persona[0])):
-            rik[i,k] = ration[k,i]
+    #print("ration",torch.sum(ration,dim=0))
+    for m in range(step):
+        for n in range(agent_num):
+            for l in range(len(persona[0][0])):
+                rik[m,n,l] = ration[m,l,n]
 
     return rik
 
@@ -209,7 +215,8 @@ def execute_data():
     path = path_n+"gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
-    persona_ration = torch.from_numpy(persona_ration).to(device)
+
+    
 
 
     #print(persona_ration)
@@ -238,15 +245,20 @@ def execute_data():
     lr_c = 0.01
     target_update_steps = 8
     alpha = alpha
-
     beta = beta
-    T = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    e = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    r = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    w = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-
-
     story_count = 5
+
+    #5,32,4
+    persona_ration = torch.from_numpy(np.tile(persona_ration,(story_count,1,1))).to(device)
+
+    #5,4
+    T = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
+    e = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
+    r = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
+    q = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
+    w = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
+    
+
     ln = 0
     ln_sub = 0
     sub_ln = []
@@ -254,13 +266,7 @@ def execute_data():
     episode = 0
     count = 0
     episodes_reward = []
-    persona_parms =[]
-    persona_parms.append(torch.from_numpy(np.array([T,e,r,w])))
-    persona_rations =[]
-    persona_rations.append(persona_ration)
 
-
-    #n_episodes = 10000
 
     while flag and ln_sub <= 1:
 
@@ -282,27 +288,21 @@ def execute_data():
                 T=T,
                 e=e,
                 r=r,
+                q=q,
                 w=w,
                 persona=persona_ration,
-                step = GENERATE_TIME,
+                step = story_count,
                 base_time=LEARNED_TIME
                 )
                       
 
             # スムージングファクター
             alpha = 0.1
-            print("nm",new_mixture_ratio)
+            #print("nm",new_mixture_ratio)
             updated_prob_tensor = (1 - alpha) * mixture_ratio + alpha * new_mixture_ratio
-
-            print("Updated prob tensor with smoothing:", updated_prob_tensor)
-
-
-            
-
             mixture_ratio = updated_prob_tensor
       
-            
- 
+
         #personaはじめは均等
         if episode == 0:
                     #環境の設定
@@ -310,7 +310,6 @@ def execute_data():
                 agent_num=agent_num,
                 edges=load_data.adj[LEARNED_TIME].clone(),
                 feature=load_data.feature[LEARNED_TIME].clone(),
-                temper=T,
                 alpha=alpha,
                 beta=beta,
                 persona=mixture_ratio
@@ -324,23 +323,26 @@ def execute_data():
                     )
             
         episode_reward = 0
-        trajectory = torch.empty([story_count,2])
-        agents = PPO(obs,agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,story_count)
+        agents = PPO(obs,agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,q,w,mixture_ratio,story_count)
         for i in range(story_count):
 
             edges,feature = obs.state()
-            feat,action_probs = agents.get_actions(edges,feature)
+            feat,action_probs = agents.get_actions(edges,feature,i)
+           
             #print("0",action_probs[action_probs<0].sum())
             #print("1",action_probs[action_probs>1].sum())
             #print("nan",action_probs[action_probs=="Nan"].sum())
             #->nanいる
-            print("debag",i,feat)
+   
             action = action_probs.bernoulli()
             #属性値を確率分布の出力と考えているので、ベルヌーイ分布で値予測
             #feat = torch.clamp(feat,min=0)
 
         
-            reward = obs.step(feat,action)
+            reward = obs.step(feat,action,i)
+   
+            # 勾配を計算する
+         
             #sotry_count,agentnum,1→各行動の報酬のtonsorを保持した方が勾配計算うまくいくかも
 
             agents.memory.probs[i]=action_probs.clone()
@@ -354,18 +356,15 @@ def execute_data():
 
         episodes_reward.append(episode_reward)
         print("epsiode_rewaerd",episodes_reward[-1])
-        new_T,new_e,new_r,new_w = agents.train(gamma,lamda,persona_parms)
+        T,e,r,q,w= agents.train(gamma)
         #new_T,new_e,new_r,new_w = agents.train_a(memory,gamma)
+        print("r",r,"q",q)
         count +=1
 
-        T = new_T
-        e = new_e
-        r = new_r
-        w = new_w
+
   
      
-        persona_parms.append(torch.from_numpy(np.array([T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()])))
-        persona_rations.append(mixture_ratio)
+
         ln_before = ln
         ln = agents.ln
         ln_sub =abs(ln-ln_before)
@@ -380,7 +379,7 @@ def execute_data():
             #print(reward)
             print(episodes_reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
-        if episode >=10:
+        if episode >=100:
             flag = False
         #print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
     calc_log = np.zeros((10, 5))
@@ -388,7 +387,7 @@ def execute_data():
     attr_calc_log = np.zeros((10, 5))
     attr_calc_nll_log = np.zeros((10, 5))
     print(sub_ln)
-    print("学習後",agents.new_actor.T,agents.new_actor.e,agents.new_actor.r,agents.new_actor.W)
+    print("学習後",agents.new_actor.T,agents.new_actor.e,agents.new_actor.r,agents.new_actor.q,agents.new_actor.W)
 
     
         
@@ -398,10 +397,9 @@ def execute_data():
             load_data.feature[LEARNED_TIME].clone(),
             persona=persona_ration
         )
-
+   
         for t in range(TOTAL_TIME - GENERATE_TIME):
-            agents = PPO(obs,agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,story_count)
-            print("学習後",agents.new_actor.T,agents.new_actor.e,agents.new_actor.r,agents.new_actor.W)
+
 
             gc.collect()
             #field.state()隣接行列、属性値を返す
@@ -413,12 +411,12 @@ def execute_data():
             #print("feat",feat)
             #featもprobも確率
             prob ,feat ,feat_bernoulli = agents.actor.test(
-              edges,feature
+              edges,feature,t
             )
             del edges, feature
            
 
-            reward = obs.step(feat_bernoulli,prob.bernoulli())
+            reward = obs.step(feat_bernoulli,prob.bernoulli(),t)
 
             #属性値の評価 
             target_prob = torch.ravel(feat).to("cpu")

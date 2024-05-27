@@ -34,7 +34,7 @@ def init_real_data() -> LoadDataset:
 
         _ = spmat2sptensor(feature_)
         feature[t] = _
-
+        
     return LoadDataset(
         adj=adj,
         feature=feature,
