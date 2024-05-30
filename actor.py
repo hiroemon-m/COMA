@@ -18,13 +18,13 @@ device = config.select_device
 
 class Actor(nn.Module):
 
-    def __init__(self, T, e, r,q, w,persona) -> None:
+    def __init__(self, T, e, r, w,persona) -> None:
 
         super().__init__()
         self.T = nn.Parameter(T.clone().detach().requires_grad_(True))
         self.e = nn.Parameter(e.clone().detach().requires_grad_(True))
         self.r = nn.Parameter(r.clone().detach().to(device).requires_grad_(True))
-        self.q = nn.Parameter(q.clone().detach().to(device).requires_grad_(True))
+        #self.q = nn.Parameter(q.clone().detach().to(device).requires_grad_(True))
         self.W = nn.Parameter(w.clone().detach().to(device).requires_grad_(True))
         self.persona = persona
 
@@ -43,7 +43,6 @@ class Actor(nn.Module):
             r = self.r[time][i]
             r = r + 1e-8
             feat = r * attributes + tmp_tensor * (1-r)
-            feat = torch.tanh(feat)
             x = torch.mm(feat, feat.t())
             x = x.div(self.T[time][i]+1e-8)
             x = torch.clamp(x, max=79)
@@ -75,7 +74,6 @@ class Actor(nn.Module):
             r = self.r[time][i]
             r = r + 1e-8
             feat = r * attributes + tmp_tensor * (1-r)
-            feat = torch.tanh(feat)
             x = torch.mm(feat, feat.t())
             x = x.div(self.T[time][i]+1e-8)
             x = torch.clamp(x, max=79)
@@ -95,7 +93,9 @@ class Actor(nn.Module):
         #属性の方策
         attr_tanh = torch.tanh(attr)
         attr_tanh = torch.clamp(attr_tanh,min=0)
-        attr_ber = attr_tanh.bernoulli()
+        #attr_ber = attr_tanh.bernoulli()
+        attr_ber = torch.where(attr_tanh > 0.5, torch.tensor(1.0), torch.tensor(0.0))
+
 
 
         return probability, attr_ber
@@ -117,8 +117,6 @@ class Actor(nn.Module):
             r = self.r[time][i]
             r = r + 1e-8
             feat = r * attributes + tmp_tensor * (1-r)
-            feat = torch.tanh(feat)
-        
             x = torch.mm(feat, feat.t())
             x = x.div(self.T[time][i]+1e-8)
             x = torch.clamp(x, max=79)
@@ -138,7 +136,10 @@ class Actor(nn.Module):
         #属性の調整
         attr_tanh = torch.tanh(attr)
         attr_tanh = torch.clamp(attr_tanh,min=0)
-        attr_ber = attr_tanh.bernoulli() 
+        #attr_ber = attr_tanh.bernoulli() 
+        attr_ber = torch.where(attr_tanh > 0.5, torch.tensor(1.0), torch.tensor(0.0))
+
+
 
         return probability, attr_ber
     
@@ -157,7 +158,6 @@ class Actor(nn.Module):
             r = self.r[time][i]
             r = r + 1e-8
             feat = r * attributes + tmp_tensor * (1-r)
-            feat = torch.tanh(feat)
             x = torch.mm(feat, feat.t())
             x = x.div(self.T[time][i]+1e-8)
             x = torch.clamp(x, max=79)
@@ -176,7 +176,7 @@ class Actor(nn.Module):
         #属性の調整
         attr_tanh = torch.tanh(attr)
         attr_tanh = torch.clamp(attr_tanh,min=0)
-        attr_ber = attr_tanh.bernoulli()
+        attr_ber = torch.where(attr_tanh > 0.5, torch.tensor(1.0), torch.tensor(0.0))
 
         return probability, attr_tanh,attr_ber
 

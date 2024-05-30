@@ -25,7 +25,7 @@ from actor import Actor
 device = config.select_device
 
 class PPO:
-    def __init__(self, obs,agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,q,w,rik,story_count):
+    def __init__(self, obs,agent_num,input_size, action_dim, lr_a, gamma, target_update_steps,T,e,r,w,rik,story_count):
         self.agent_num = agent_num
         self.action_dim = action_dim
         self.input_size = input_size
@@ -39,8 +39,8 @@ class PPO:
         self.beta = self.obs.beta
         self.ln = 0
         self.count = 0
-        self.actor = Actor(T,e,r,q,w,rik)
-        self.new_actor = Actor(T,e,r,q,w,rik)
+        self.actor = Actor(T,e,r,w,rik)
+        self.new_actor = Actor(T,e,r,w,rik)
         #adamにモデルを登録
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_a) 
         self.new_actor_optimizer = torch.optim.Adam(self.new_actor.parameters(), lr=lr_a) 
@@ -105,8 +105,8 @@ class PPO:
             new_policy,_ =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i],i)
             ratio =torch.exp(torch.log(new_policy+1e-7) - torch.log(old_policy+1e-7))
             ratio_clipped = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
+            #G = G_r[i] - baseline[i]
             G = G_r[i] - baseline[i]
-    
             reward_unclipped = ratio * G
             reward_clipped = ratio_clipped * G
             reward = torch.min(reward_unclipped, reward_clipped)
@@ -121,9 +121,9 @@ class PPO:
                         # 勾配の計算と適用
             
 
-            for param in self.new_actor.parameters():
-                if param.grad is not None:
-                    param.grad.data = param.grad.data / (param.grad.data.norm() + 1e-6)
+            #for param in self.new_actor.parameters():
+            #    if param.grad is not None:
+            #        param.grad.data = param.grad.data / (param.grad.data.norm() + 1e-6)
 
             #for name, param in self.new_actor.named_parameters():
             #    if param.grad is not None:
@@ -145,13 +145,13 @@ class PPO:
             #print("w",self.new_actor.W.grad)
 
         
-        return self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.q,self.new_actor.W,
+        return self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.W
     
 
 
-def e_step(agent_num,load_data,T,e,r,q,w,persona,step,base_time):
+def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
 
-    actor = actor = Actor(T,e,r,q,w,persona)
+    actor = actor = Actor(T,e,r,w,persona)
   
     #personaはじめは均等
     policy_ration = torch.empty(step,len(persona[0][0]),agent_num,agent_num)
@@ -177,10 +177,7 @@ def e_step(agent_num,load_data,T,e,r,q,w,persona,step,base_time):
     rik = torch.empty(step,agent_num,len(persona[0][0]))
     #分母 top時間に縮約、bottom:ペルソナについて縮約 5,4,32,32 ->5,1,32,32
     bottom = torch.sum(top,dim=1,keepdim=True)
-
-    print(top[0,:,0,0])
-
-    print(bottom[0,0,0,0])
+   
     top = torch.mean(top,dim=3)
     bottom= torch.mean(bottom,dim=3)
 
@@ -239,10 +236,8 @@ def execute_data():
     action_dim = 32
     N = 32
     #パラメータ
-    gamma = 0.90
-    lamda = 0.95
-    lr_a = 0.01
-    lr_c = 0.01
+    gamma = 0.85
+    lr_a = 0.02
     target_update_steps = 8
     alpha = alpha
     beta = beta
@@ -255,8 +250,12 @@ def execute_data():
     T = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
     e = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
     r = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
-    q = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
     w = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
+    
+    #T = torch.tensor([[0.746,1.195,0.861,0.9553] for s in range(story_count)], dtype=torch.float32)
+    #e = torch.tensor([[0.704,0.839,0.777,1.180] for s in range(story_count)], dtype=torch.float32)
+    #r = torch.tensor([[0.839,0.825,0.743,0.805] for s in range(story_count)], dtype=torch.float32)
+    #w = torch.tensor([[1.100,0.876,0.969,0.840] for s in range(story_count)], dtype=torch.float32)
     
 
     ln = 0
@@ -288,7 +287,6 @@ def execute_data():
                 T=T,
                 e=e,
                 r=r,
-                q=q,
                 w=w,
                 persona=persona_ration,
                 step = story_count,
@@ -323,7 +321,7 @@ def execute_data():
                     )
             
         episode_reward = 0
-        agents = PPO(obs,agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,q,w,mixture_ratio,story_count)
+        agents = PPO(obs,agent_num, input_size, action_dim,lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,story_count)
         for i in range(story_count):
 
             edges,feature = obs.state()
@@ -348,8 +346,9 @@ def execute_data():
 
         episodes_reward.append(episode_reward)
         print("epsiode_rewaerd",episodes_reward[-1])
-        T,e,r,q,w= agents.train(gamma)
-        #new_T,new_e,new_r,new_w = agents.train_a(memory,gamma)
+        T,e,r,w= agents.train(gamma)
+        print("T",T,"e",e,"r",r,"w",w)
+        #print("pr",mixture_ratio)
         count +=1
 
 
@@ -359,14 +358,14 @@ def execute_data():
         episode += 1
         sub_ln.append([ln_sub,episode_reward])
         print("ln_sub---------------------------------",ln_sub)
-        episode += 1
+   
     
-
+     
         if episode % 10 == 0:
             #print(reward)
             print(episodes_reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
-        if episode >=50:
+        if episode >=100:
             flag = False
         #print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
     calc_log = np.zeros((10, 5))
@@ -374,7 +373,7 @@ def execute_data():
     attr_calc_log = np.zeros((10, 5))
     attr_calc_nll_log = np.zeros((10, 5))
     print(sub_ln)
-    print("学習後",agents.new_actor.T,agents.new_actor.e,agents.new_actor.r,agents.new_actor.q,agents.new_actor.W)
+    print("学習後",agents.new_actor.T,agents.new_actor.e,agents.new_actor.r,agents.new_actor.W)
 
     
         
@@ -482,14 +481,15 @@ def execute_data():
             
         #print("---")
 
+    data_name = "NIPS"
 
-    np.save("experiment_data/DBLP/abligation/persona={}/proposed_edge_auc".format(persona_num), calc_log)
-    np.save("experiment_data/DBLP/abligation/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
-    np.save("experiment_data/DBLP/abligation/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
-    np.save("experiment_data/DBLP/abligation/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
+    np.save("experiment_data/{}/param/persona={}/proposed_edge_auc".format(data_name,persona_num), calc_log)
+    np.save("experiment_data/{}/param/persona={}/proposed_edge_nll".format(data_name,persona_num), calc_nll_log)
+    np.save("experiment_data/{}/param/persona={}/proposed_attr_auc".format(data_name,persona_num), attr_calc_log)
+    np.save("experiment_data/{}/param/persona={}/proposed_attr_nll".format(data_name,persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save("experiment_data/DBLP/abligation/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
-    np.save("experiment_data/DBLP/abligation/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
+    np.save("experiment_data/{}/param/persona={}/parameter".format(data_name,persona_num),np.concatenate([alpha,beta],axis=0))
+    np.save("experiment_data/{}/param/persona={}/rw_paramerter".format(data_name,persona_num),np.concatenate([persona_ration.detach().numpy(),T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()],axis=0))
 
 
   
