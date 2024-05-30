@@ -45,7 +45,7 @@ class Actor(nn.Module):
             feat = r * attributes + tmp_tensor * (1-r)
             x = torch.mm(feat, feat.t())
             x = x.div(self.T[i]+1e-8)
-            x = torch.clamp(x, max=79)
+            x = torch.clamp(x, max=78)
             x = torch.exp(x)
             x = x*self.e[i]
             min_values = torch.min(x, dim=0).values
@@ -77,7 +77,7 @@ class Actor(nn.Module):
             feat = r * attributes + tmp_tensor * (1-r)
             x = torch.mm(feat, feat.t())
             x = x.div(self.T[i]+1e-8)
-            x = torch.clamp(x, max=79)
+            x = torch.clamp(x, max=78)
             x = torch.exp(x)
             x = x*self.e[i]
 
@@ -121,7 +121,7 @@ class Actor(nn.Module):
             feat = r * attributes + tmp_tensor * (1-r)
             x = torch.mm(feat, feat.t())
             x = x.div(self.T[i]+1e-8)
-            x = torch.clamp(x, max=79)
+            x = torch.clamp(x, max=78)
             x = torch.exp(x)
             x = x*self.e[i]
 
@@ -164,7 +164,7 @@ class Actor(nn.Module):
             feat = r * attributes + tmp_tensor * (1-r)
             x = torch.mm(feat, feat.t())
             x = x.div(self.T[i]+1e-8)
-            x = torch.clamp(x, max=79)
+            x = torch.clamp(x, max=78)
             x = torch.exp(x)
             x = x*self.e[i]
 

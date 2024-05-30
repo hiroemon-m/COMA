@@ -59,7 +59,7 @@ class PPO:
     def train(self,gamma):
 
         #----G(t)-b(s)----
-        G,loss = 0,0
+
         cliprange=0.2
         storycount = self.story_count
 
@@ -100,49 +100,51 @@ class PPO:
         #r1x32x1
         losses = []
         for i in range(storycount):
-     
-            old_policy = self.memory.probs[i]   
-            new_policy,_ =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i],i)
-            ratio =torch.exp(torch.log(new_policy+1e-7) - torch.log(old_policy+1e-7))
-            ratio_clipped = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
-            #G = G_r[i] - baseline[i]
-            G = G_r[i] - baseline[i]
-            reward_unclipped = ratio * G
-            reward_clipped = ratio_clipped * G
-            reward = torch.min(reward_unclipped, reward_clipped)
-            # 最大化のために-1を掛ける
-            loss = loss - torch.sum(torch.log(self.memory.probs[i])*reward)
+            G,loss = 0,0
+            for i in range(storycount):
+        
+                old_policy = self.memory.probs[i]   
+                new_policy,_ =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i],i)
+                ratio =torch.exp(torch.log(new_policy+1e-7) - torch.log(old_policy+1e-7))
+                ratio_clipped = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
+                #G = G_r[i] - baseline[i]
+                G = G_r[i] - baseline[i]
+                reward_unclipped = ratio * G
+                reward_clipped = ratio_clipped * G
+                reward = torch.min(reward_unclipped, reward_clipped)
+                # 最大化のために-1を掛ける
+                loss = loss - torch.sum(torch.log(self.memory.probs[i])*reward)
 
   
 
 
-        self.new_actor_optimizer.zero_grad()
-        loss.backward(retain_graph=True)
+            self.new_actor_optimizer.zero_grad()
+            loss.backward(retain_graph=True)
                         # 勾配の計算と適用
             
 
-            #for param in self.new_actor.parameters():
-            #    if param.grad is not None:
-            #        param.grad.data = param.grad.data / (param.grad.data.norm() + 1e-6)
+            for param in self.new_actor.parameters():
+                if param.grad is not None:
+                    param.grad.data = param.grad.data / (param.grad.data.norm() + 1e-6)
 
-            #for name, param in self.new_actor.named_parameters():
-            #    if param.grad is not None:
-            #        print(f"{i}:{name} grad: {param.grad}")
-            #    else:
-            #        print(f"{i}:{name} grad is None")
+            for name, param in self.new_actor.named_parameters():
+                if param.grad is not None:
+                    print(f"{i}:{name} grad: {param.grad}")
+                else:
+                    print(f"{i}:{name} grad is None")
 
       
 
-        self.new_actor_optimizer.step()
-        losses.append(loss)
+            self.new_actor_optimizer.step()
+            losses.append(loss)
 
             #print("更新後",self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.W)
 
             #print("loss",loss.grad)
-            #print("t",self.new_actor.T.grad)
-            #print("e",self.new_actor.e.grad)
-            #print("r",self.new_actor.r.grad)
-            #print("w",self.new_actor.W.grad)
+            print("t",self.new_actor.T)
+            print("e",self.new_actor.e)
+            print("r",self.new_actor.r)
+            print("w",self.new_actor.W)
 
         
         return self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.W
@@ -236,7 +238,7 @@ def execute_data():
     N = 32
     #パラメータ
     gamma = 0.90
-    lr_a = 0.05
+    lr_a = 0.01
     target_update_steps = 8
     alpha = alpha
     beta = beta
@@ -366,7 +368,7 @@ def execute_data():
             #print(reward)
             print(episodes_reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
-        if episode >=100:
+        if episode >=50:
             flag = False
         #print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
     calc_log = np.zeros((10, 5))
