@@ -29,7 +29,7 @@ class Actor(nn.Module):
         self.persona = persona
 
 
-    def calc_ration(self,attributes, edges,persona,time):
+    def calc_ration(self,attributes, edges,persona):
 
         calc_policy = torch.empty(len(persona[0][0]),32,32)
         # インプレース操作を回避するために新しい変数を使用して新しいテンソルを作成
@@ -39,15 +39,15 @@ class Actor(nn.Module):
 
         for i in range(len(persona[0][0])):
         
-            tmp_tensor = self.W[time][i] * torch.matmul(edges, attributes)
-            r = self.r[time][i]
+            tmp_tensor = self.W[i] * torch.matmul(edges, attributes)
+            r = self.r[i]
             r = r + 1e-8
             feat = r * attributes + tmp_tensor * (1-r)
             x = torch.mm(feat, feat.t())
-            x = x.div(self.T[time][i]+1e-8)
+            x = x.div(self.T[i]+1e-8)
             x = torch.clamp(x, max=79)
             x = torch.exp(x)
-            x = x*self.e[time][i]
+            x = x*self.e[i]
             min_values = torch.min(x, dim=0).values
             max_values = torch.max(x, dim=0).values
             x = ((x - min_values)) / ((max_values - min_values) + 1e-8)
@@ -70,15 +70,16 @@ class Actor(nn.Module):
 
         for i in range(len(self.persona[0][0])):
             
-            tmp_tensor = self.W[time][i] * torch.matmul(edges, attributes)
-            r = self.r[time][i]
+            tmp_tensor = self.W[i] * torch.matmul(edges, attributes)
+            r = self.r[i]
             r = r + 1e-8
+       
             feat = r * attributes + tmp_tensor * (1-r)
             x = torch.mm(feat, feat.t())
-            x = x.div(self.T[time][i]+1e-8)
+            x = x.div(self.T[i]+1e-8)
             x = torch.clamp(x, max=79)
             x = torch.exp(x)
-            x = x*self.e[time][i]
+            x = x*self.e[i]
 
             # Min-Max スケーリング
             min_values = torch.min(x, dim=0).values
@@ -89,6 +90,7 @@ class Actor(nn.Module):
             x = self.persona[time][:,i]*x
             attr = attr + self.persona[time][:,i].view(32,-1)*feat
             probability =  torch.clamp(probability + x ,min=0,max=1)
+            probability = probability + 1e-10
 
         #属性の方策
         attr_tanh = torch.tanh(attr)
@@ -113,15 +115,15 @@ class Actor(nn.Module):
             
         for i in range(len(self.persona[0][0])):
     
-            tmp_tensor = self.W[time][i] * torch.matmul(edges, attributes)
-            r = self.r[time][i]
+            tmp_tensor = self.W[i] * torch.matmul(edges, attributes)
+            r = self.r[i]
             r = r + 1e-8
             feat = r * attributes + tmp_tensor * (1-r)
             x = torch.mm(feat, feat.t())
-            x = x.div(self.T[time][i]+1e-8)
+            x = x.div(self.T[i]+1e-8)
             x = torch.clamp(x, max=79)
             x = torch.exp(x)
-            x = x*self.e[time][i]
+            x = x*self.e[i]
 
             # Min-Max スケーリング
             min_values = torch.min(x, dim=0).values
@@ -132,11 +134,13 @@ class Actor(nn.Module):
             x = self.persona[time][:,i]*x
             attr = attr + self.persona[time][:,i].view(-1,1)*feat
             probability =  torch.clamp(probability + x ,min=0,max=1)
+            probability = probability + 1e-10
  
         #属性の調整
         attr_tanh = torch.tanh(attr)
         attr_tanh = torch.clamp(attr_tanh,min=0)
         #attr_ber = attr_tanh.bernoulli() 
+
         attr_ber = torch.where(attr_tanh > 0.5, torch.tensor(1.0), torch.tensor(0.0))
 
 
@@ -154,15 +158,15 @@ class Actor(nn.Module):
             
         for i in range(len(self.persona[0][0])):
     
-            tmp_tensor = self.W[time][i] * torch.matmul(edges, attributes)
-            r = self.r[time][i]
+            tmp_tensor = self.W[i] * torch.matmul(edges, attributes)
+            r = self.r[i]
             r = r + 1e-8
             feat = r * attributes + tmp_tensor * (1-r)
             x = torch.mm(feat, feat.t())
-            x = x.div(self.T[time][i]+1e-8)
+            x = x.div(self.T[i]+1e-8)
             x = torch.clamp(x, max=79)
             x = torch.exp(x)
-            x = x*self.e[time][i]
+            x = x*self.e[i]
 
             # Min-Max スケーリング
             min_values = torch.min(x, dim=0).values
@@ -172,6 +176,7 @@ class Actor(nn.Module):
             x = self.persona[time][:,i]*x
             attr = attr + self.persona[time][:,i].view(-1,1)*feat
             probability =  torch.clamp(probability + x ,min=0,max=1)
+            probability = probability + 1e-10
 
         #属性の調整
         attr_tanh = torch.tanh(attr)

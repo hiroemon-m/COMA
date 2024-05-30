@@ -111,13 +111,13 @@ class PPO:
             reward_clipped = ratio_clipped * G
             reward = torch.min(reward_unclipped, reward_clipped)
             # 最大化のために-1を掛ける
-            loss = -reward.mean()
+            loss = loss - torch.sum(torch.log(self.memory.probs[i])*reward)
 
   
 
 
-            self.new_actor_optimizer.zero_grad()
-            loss.backward(retain_graph=True)
+        self.new_actor_optimizer.zero_grad()
+        loss.backward(retain_graph=True)
                         # 勾配の計算と適用
             
 
@@ -133,8 +133,8 @@ class PPO:
 
       
 
-            self.new_actor_optimizer.step()
-            losses.append(loss)
+        self.new_actor_optimizer.step()
+        losses.append(loss)
 
             #print("更新後",self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.W)
 
@@ -161,7 +161,6 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
                     load_data.feature[base_time+time].clone(),
                     load_data.adj[base_time+time].clone(),
                     persona,
-                    time
                     )
      
         policy_ration[time] = polic_prob
@@ -236,8 +235,8 @@ def execute_data():
     action_dim = 32
     N = 32
     #パラメータ
-    gamma = 0.85
-    lr_a = 0.02
+    gamma = 0.90
+    lr_a = 0.05
     target_update_steps = 8
     alpha = alpha
     beta = beta
@@ -247,10 +246,12 @@ def execute_data():
     persona_ration = torch.from_numpy(np.tile(persona_ration,(story_count,1,1))).to(device)
 
     #5,4
-    T = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
-    e = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
-    r = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
-    w = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
+    T = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    e = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    r = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    w = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    
+    #w = torch.tensor([[1.0 for _ in range(persona_num)] for s in range(story_count)], dtype=torch.float32)
     
     #T = torch.tensor([[0.746,1.195,0.861,0.9553] for s in range(story_count)], dtype=torch.float32)
     #e = torch.tensor([[0.704,0.839,0.777,1.180] for s in range(story_count)], dtype=torch.float32)
@@ -348,7 +349,7 @@ def execute_data():
         print("epsiode_rewaerd",episodes_reward[-1])
         T,e,r,w= agents.train(gamma)
         print("T",T,"e",e,"r",r,"w",w)
-        #print("pr",mixture_ratio)
+        print("pr",mixture_ratio)
         count +=1
 
 
