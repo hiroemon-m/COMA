@@ -25,7 +25,7 @@ from actor import Actor
 device = config.select_device
 
 class PPO:
-    def __init__(self, obs,agent_num,input_size, action_dim, lr_a, gamma, target_update_steps,T,e,r,w,rik,story_count):
+    def __init__(self, obs,agent_num,input_size, action_dim, lr_a, gamma, target_update_steps,T,e,r,w,rik,story_count,data_set):
         self.agent_num = agent_num
         self.action_dim = action_dim
         self.input_size = input_size
@@ -33,14 +33,14 @@ class PPO:
         self.persona = rik
         self.target_update_steps = target_update_steps
         self.story_count = story_count 
-        self.memory = Memory(agent_num, action_dim,self.story_count)
+        self.memory = Memory(agent_num, action_dim,self.story_count,data_set)
         self.obs = obs
         self.alpha = self.obs.alpha
         self.beta = self.obs.beta
         self.ln = 0
         self.count = 0
-        self.actor = Actor(T,e,r,w,rik)
-        self.new_actor = Actor(T,e,r,w,rik)
+        self.actor = Actor(T,e,r,w,rik,self.agent_num)
+        self.new_actor = Actor(T,e,r,w,rik,self.agent_num)
         #adamにモデルを登録
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_a) 
         self.new_actor_optimizer = torch.optim.Adam(self.new_actor.parameters(), lr=lr_a) 
@@ -64,12 +64,13 @@ class PPO:
         storycount = self.story_count
 
         lnpxz = self.memory.probs.view(-1).sum()
-        G_r = torch.empty([storycount,32,32])
+    
+        G_r = torch.empty([storycount,self.agent_num,self.agent_num])
 
         #baselineの作成
         #self.memory 10x32x1
 
-        baseline = torch.empty([storycount,32,1])
+        baseline = torch.empty([storycount,self.agent_num,1])
 
         for r in range(len(self.memory.reward) - 1,-1,-1):
             if r == len(self.memory.reward) - 1:
@@ -113,7 +114,7 @@ class PPO:
                 reward_clipped = ratio_clipped * G
                 reward = torch.min(reward_unclipped, reward_clipped)
                 # 最大化のために-1を掛ける
-                loss = loss - torch.sum(torch.log(self.memory.probs[i])*reward)
+                loss = loss - torch.sum(torch.log(new_policy[i])*reward)
 
   
 
@@ -145,7 +146,9 @@ class PPO:
             print("e",self.new_actor.e)
             print("r",self.new_actor.r)
             print("w",self.new_actor.W)
-
+        
+        del G_r,baseline
+        gc.collect()
         
         return self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.W
     
@@ -153,7 +156,7 @@ class PPO:
 
 def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
 
-    actor = actor = Actor(T,e,r,w,persona)
+    actor = actor = Actor(T,e,r,w,persona,agent_num)
   
     #personaはじめは均等
     policy_ration = torch.empty(step,len(persona[0][0]),agent_num,agent_num)
@@ -202,17 +205,23 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
     return rik
 
 
-def execute_data():
+def execute_data(n,data_name):
     ##デバッグ用
     torch.autograd.set_detect_anomaly(True)
     #alpha,betaの読み込み
        #ペルソナの取り出し
     #ペルソナの数[3,4,5,6,8,12]
-    path_n = "gamma/complete/"
-    persona_num = 4
+
+    path_n = "gamma/{}/".format(data_name)
+    persona_num = n
     path = path_n+"gamma{}.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
+
+    if data_name == "NIPS":
+        action_dim = 32
+    else:
+        action_dim = 500
 
     
 
@@ -234,8 +243,7 @@ def execute_data():
     agent_num = len(load_data.adj[LEARNED_TIME])
     input_size = len(load_data.feature[LEARNED_TIME][1])
 
-    action_dim = 32
-    N = 32
+
     #パラメータ
     gamma = 0.90
     lr_a = 0.01
@@ -302,8 +310,9 @@ def execute_data():
             #print("nm",new_mixture_ratio)
             updated_prob_tensor = (1 - alpha) * mixture_ratio + alpha * new_mixture_ratio
             mixture_ratio = updated_prob_tensor
-      
-
+            print("delete")
+            del agents
+            gc.collect()
         #personaはじめは均等
         if episode == 0:
                     #環境の設定
@@ -324,7 +333,7 @@ def execute_data():
                     )
             
         episode_reward = 0
-        agents = PPO(obs,agent_num, input_size, action_dim,lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,story_count)
+        agents = PPO(obs,agent_num, input_size, action_dim,lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,story_count,data_name)
         for i in range(story_count):
 
             edges,feature = obs.state()
@@ -484,15 +493,15 @@ def execute_data():
             
         #print("---")
 
-    data_name = "NIPS"
+
 
     np.save("experiment_data/{}/param/persona={}/proposed_edge_auc".format(data_name,persona_num), calc_log)
     np.save("experiment_data/{}/param/persona={}/proposed_edge_nll".format(data_name,persona_num), calc_nll_log)
     np.save("experiment_data/{}/param/persona={}/proposed_attr_auc".format(data_name,persona_num), attr_calc_log)
     np.save("experiment_data/{}/param/persona={}/proposed_attr_nll".format(data_name,persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save("experiment_data/{}/param/persona={}/parameter".format(data_name,persona_num),np.concatenate([alpha,beta],axis=0))
-    np.save("experiment_data/{}/param/persona={}/rw_paramerter".format(data_name,persona_num),np.concatenate([persona_ration.detach().numpy(),T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()],axis=0))
+    np.save("experiment_data/{}/param/persona={}/persona_ration".format(data_name,persona_num),np.concatenate([persona_ration],axis=0))
+    np.save("experiment_data/{}/param/persona={}/paramerter".format(data_name,persona_num),np.concatenate([T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()],axis=0))
 
 
   
@@ -501,4 +510,5 @@ def execute_data():
 
 
 if __name__ == "__main__":
-    execute_data()
+    for i in [5,6,8,12,16,24,64,128,256]:
+        execute_data(i,"DBLP")

@@ -18,7 +18,7 @@ device = config.select_device
 
 class Actor(nn.Module):
 
-    def __init__(self, T, e, r, w,persona) -> None:
+    def __init__(self, T, e, r, w,persona,agent_num) -> None:
 
         super().__init__()
         self.T = nn.Parameter(T.clone().detach().requires_grad_(True))
@@ -27,11 +27,13 @@ class Actor(nn.Module):
         #self.q = nn.Parameter(q.clone().detach().to(device).requires_grad_(True))
         self.W = nn.Parameter(w.clone().detach().to(device).requires_grad_(True))
         self.persona = persona
+        self.agent_num = agent_num
+        
 
 
     def calc_ration(self,attributes, edges,persona):
 
-        calc_policy = torch.empty(len(persona[0][0]),32,32)
+        calc_policy = torch.empty(len(persona[0][0]),self.agent_num,self.agent_num)
         # インプレース操作を回避するために新しい変数を使用して新しいテンソルを作成
         edges_float = edges.float()
         edge_index = edges_float > 0
@@ -88,7 +90,7 @@ class Actor(nn.Module):
             
             x = torch.tanh(x)
             x = self.persona[time][:,i]*x
-            attr = attr + self.persona[time][:,i].view(32,-1)*feat
+            attr = attr + self.persona[time][:,i].view(-1,1)*feat
             probability =  torch.clamp(probability + x ,min=0,max=1)
             probability = probability + 1e-10
 

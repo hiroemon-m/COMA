@@ -65,7 +65,7 @@ class Optimizer:
 
 
     def export_param(self):
-        with open("gamma/complete/model.param.data.fast", "w") as f:
+        with open("gamma/DBLP/model.param.data.fast", "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
 

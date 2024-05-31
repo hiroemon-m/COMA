@@ -22,19 +22,13 @@ class Env:
         self.feature = feature.to(device)
         #単位行列作成
         #全部1の行列のほうがいいかも〜
-        self.identity = torch.eye(agent_num)
         self.alpha = alpha.clone().detach().requires_grad_(True)
-        
         self.beta = beta.clone().detach().requires_grad_(True)
         #self.alpha = alpha.requires_grad_(True)
         #self.beta = beta.requires_grad_(True)
         self.persona = persona.clone().detach().requires_grad_(True)
         #self.persona = persona.requires_grad_(True)
-        self.feature_t = self.feature.t()
-        self.sim = 0
-        self.costs = 0
-        self.persona_alpha = 0
-        self.persona_beta = 0
+
 
 
 
@@ -45,7 +39,7 @@ class Env:
         self.edges = edges
         self.feature = attributes
         self.feature = self.feature
-        self.feature_t = self.feature.t()
+    
 
         return self.edges,self.feature
     #一つ進める

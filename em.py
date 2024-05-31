@@ -109,7 +109,7 @@ def tolist(data) -> None:
 
 
 if __name__ == "__main__": 
-    path = "gamma/complete/model.param.data.fast"
+    path = "gamma/DBLP/model.param.data.fast"
     dblp_alpha,dblp_beta = tolist(path)
     data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta})
     
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     dblp_array = np.array([data_norm["alpha"].tolist(),
                       data_norm["beta"].tolist()])
     dblp_array = dblp_array.T
-    num = 16
+    num = 256
     pred = KMeans(n_clusters=num).fit_predict(dblp_array)
     dblp_kmean = data_norm
     dblp_kmean["cluster_id"] = pred
@@ -166,18 +166,18 @@ if __name__ == "__main__":
     means = []
     for i in mean:
         means.append(np.array(i))
-    gamma,means = em_algorithm(32,num,em,means,sigma)
+    gamma,means = em_algorithm(len(alpha),num,em,means,sigma)
     original_means = transformer.inverse_transform(means)
     print(gamma)
     print(np.argmax(gamma,axis=1))
     print("orginal-mean",original_means)
     np.argmax(gamma,axis=1)
     np.save(
-    "gamma/complete/gamma{}".format(num), # データを保存するファイル名
+    "gamma/DBLP/gamma{}".format(num), # データを保存するファイル名
     gamma,  # 配列型オブジェクト（listやnp.array)
     )
     np.save(
-    "gamma/complete/means{}".format(num), # データを保存するファイル名
+    "gamma/DBLP/means{}".format(num), # データを保存するファイル名
     original_means,  # 配列型オブジェクト（listやnp.array)
     )
     
