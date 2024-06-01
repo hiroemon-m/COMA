@@ -377,7 +377,7 @@ def execute_data(n,data_name):
             #print(reward)
             print(episodes_reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
-        if episode >=50:
+        if episode >=1:
             flag = False
         #print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
     calc_log = np.zeros((10, 5))
