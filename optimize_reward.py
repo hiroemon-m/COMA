@@ -22,11 +22,12 @@ class Interest(IntEnum):
 
 
 class Model(nn.Module):
-    def __init__(self, alpha, beta):
+    def __init__(self, alpha, beta, gamma):
         super().__init__()
 
         self.alpha = nn.Parameter(alpha, requires_grad=True).to(device)
         self.beta = nn.Parameter(beta, requires_grad=True).to(device)
+        self.gamma = nn.Parameter(gamma, requires_grad=True).to(device)
         return
 
 
@@ -51,8 +52,14 @@ class Optimizer:
 
         costs = torch.mul(edge, self.model.beta)
         costs = torch.add(costs, 0.001)
+        if t>1:
+            impact = torch.sum(torch.mm(self.edges[t],self.feats[t]) - torch.mm(self.edges[t],self.feats[t])**2)
+        else:
+            impact = torch.sum(torch.mm(self.edges[t],self.feats[t])**2)
 
-        reward = torch.sub(sim, costs)
+        #reward = torch.sub(sim, costs)
+        impacts = torch.mul(impact,self.model.gamma)
+        reward = sim - costs + impacts
         loss = -reward.sum()
 
         loss.backward()
@@ -65,7 +72,7 @@ class Optimizer:
 
 
     def export_param(self):
-        with open("gamma/DBLP/model.param.data.fast", "w") as f:
+        with open("gamma/NIPS/model.param.data.fast", "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
 
@@ -99,7 +106,14 @@ if __name__ == "__main__":
             dtype=np.float32,
         ),
     ).to(device)
-    model = Model(alpha, beta)
+
+    gamma = torch.from_numpy(
+        np.array(
+            [1.0 for i in range(data_size)],
+            dtype=np.float32,
+        ),
+    ).to(device)
+    model = Model(alpha, beta, gamma)
     #i = 8
     #あるノードにi関する情報を取り除く
     #list[tensor]のキモい構造なので
@@ -124,6 +138,8 @@ if __name__ == "__main__":
 
 
     optimizer = Optimizer(data.adj, data.feature, model, data_size)
+   
     for t in range(5):
         optimizer.optimize(t)
+
     optimizer.export_param()

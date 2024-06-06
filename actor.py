@@ -132,7 +132,6 @@ class Actor(nn.Module):
             max_values = torch.max(x, dim=0).values
             x = (x - min_values) / ((max_values - min_values) + 1e-8)
             x = torch.tanh(x)
-
             x = self.persona[time][:,i]*x
             attr = attr + self.persona[time][:,i].view(-1,1)*feat
             probability =  torch.clamp(probability + x ,min=0,max=1)

@@ -100,7 +100,7 @@ class PPO:
         #slf.,memory.reward 10x32x1
         #r1x32x1
         losses = []
-        for i in range(storycount):
+        for i in range(2):
             G,loss = 0,0
             for i in range(storycount):
         
@@ -311,7 +311,7 @@ def execute_data(n,data_name):
             updated_prob_tensor = (1 - alpha) * mixture_ratio + alpha * new_mixture_ratio
             mixture_ratio = updated_prob_tensor
             print("delete")
-            del agents
+       
             gc.collect()
         #personaはじめは均等
         if episode == 0:
@@ -377,7 +377,7 @@ def execute_data(n,data_name):
             #print(reward)
             print(episodes_reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
-        if episode >=1:
+        if episode >=50:
             flag = False
         #print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
     calc_log = np.zeros((10, 5))
@@ -386,6 +386,31 @@ def execute_data(n,data_name):
     attr_calc_nll_log = np.zeros((10, 5))
     print(sub_ln)
     print("学習後",agents.new_actor.T,agents.new_actor.e,agents.new_actor.r,agents.new_actor.W)
+    print(episode)
+           
+            
+    new_mixture_ratio = e_step(
+                agent_num=agent_num,
+                load_data=load_data,
+                T=T,
+                e=e,
+                r=r,
+                w=w,
+                persona=persona_ration,
+                step = story_count,
+                base_time=LEARNED_TIME
+            )
+
+                      
+
+    # スムージングファクター
+    a = 0.1
+    #print("nm",new_mixture_ratio)
+    updated_prob_tensor = (1 - a) * mixture_ratio + a * new_mixture_ratio
+    mixture_ratio = updated_prob_tensor
+    agents = PPO(obs,agent_num, input_size, action_dim,lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,story_count,data_name)
+
+
 
     
         
@@ -393,7 +418,7 @@ def execute_data(n,data_name):
         obs.reset(
             load_data.adj[LEARNED_TIME].clone(),
             load_data.feature[LEARNED_TIME].clone(),
-            persona=persona_ration
+            persona=mixture_ratio
         )
    
         for t in range(TOTAL_TIME - GENERATE_TIME):
@@ -500,7 +525,8 @@ def execute_data(n,data_name):
     np.save("experiment_data/{}/param/persona={}/proposed_attr_auc".format(data_name,persona_num), attr_calc_log)
     np.save("experiment_data/{}/param/persona={}/proposed_attr_nll".format(data_name,persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save("experiment_data/{}/param/persona={}/persona_ration".format(data_name,persona_num),np.concatenate([persona_ration],axis=0))
+    print(mixture_ratio)
+    np.save("experiment_data/{}/param/persona={}/persona_ration".format(data_name,persona_num),np.concatenate([mixture_ratio.detach().numpy()],axis=0))
     np.save("experiment_data/{}/param/persona={}/paramerter".format(data_name,persona_num),np.concatenate([T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()],axis=0))
 
 
@@ -510,5 +536,7 @@ def execute_data(n,data_name):
 
 
 if __name__ == "__main__":
-    for i in [5,6,8,12,16,24,64,128,256]:
-        execute_data(i,"DBLP")
+    #[5,12,24,64,128,256],24,64,128,256
+    #[4,8,12,16]
+    for i in [4,8,12,16]:
+        execute_data(i,"NIPS")

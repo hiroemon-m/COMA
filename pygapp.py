@@ -9,9 +9,10 @@ import datetime
 # 今回のデータ生成に使う関数
 #
 # ランダムなデータをnum_rows行を生成する
-p = 3
+p = 4
 path = "experiment_data/NIPS/param/persona={}/persona_ration.npy".format(p)
 data = np.load(path)
+print(data)
 arr = data[0]
 num_rows = p
 num_column = 32

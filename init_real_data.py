@@ -3,14 +3,15 @@ from data_loader import (
     attr_graph_dynamic_spmat_DBLP,
     attr_graph_dynamic_spmat_NIPS,
     attr_graph_dynamic_spmat_twitter,
+    attr_graph_dynamic_spmat_Reddit,
     spmat2sptensor,
 )
 
 TOTAL_TIME = 10
 # input_graph = attr_graph_dynamic_spmat_twitter(T=TOTAL_TIME)
-#input_graph = attr_graph_dynamic_spmat_NIPS(T=TOTAL_TIME)
-input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME)
-
+input_graph = attr_graph_dynamic_spmat_NIPS(T=TOTAL_TIME)
+#input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME)
+#input_graph = attr_graph_dynamic_spmat_Reddit(T=15)
 
 class LoadDataset:
     adj = []
@@ -22,8 +23,11 @@ class LoadDataset:
 
 
 def init_real_data() -> LoadDataset:
-    input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME)
+    input_graph = attr_graph_dynamic_spmat_NIPS(T=TOTAL_TIME)
+    #input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME)   
+    #input_graph = attr_graph_dynamic_spmat_Reddit(T=15)
 
+ 
     adj = input_graph.Gmat_list
     feature = input_graph.Amat_list
 
@@ -36,8 +40,14 @@ def init_real_data() -> LoadDataset:
 
         _ = spmat2sptensor(feature_)
         feature[t] = _
-        
+
+  
     return LoadDataset(
         adj=adj,
         feature=feature,
     )
+
+
+if "__name__" == "__main__":
+    
+    init_real_data()
