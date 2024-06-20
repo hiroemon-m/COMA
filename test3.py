@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
 import tensorflow as tf
+import optuna
 
 # First Party Library
 import csv
@@ -119,15 +120,15 @@ class PPO:
             loss.backward(retain_graph=True)
                         # 勾配の計算と適用
             
-            #for param in self.new_actor.parameters():
-            #    if param.grad is not None:
-            #        param.grad.data = param.grad.data / (param.grad.data.norm() + 1e-6)
-
-            for name, param in self.new_actor.named_parameters():
+            for param in self.new_actor.parameters():
                 if param.grad is not None:
-                    print(f"{i}:{name} grad: {param.grad}")
-                else:
-                    print(f"{i}:{name} grad is None")
+                    param.grad.data = param.grad.data / (param.grad.data.norm() + 1e-6)
+
+            #for name, param in self.new_actor.named_parameters():
+            #    if param.grad is not None:
+            #        print(f"{i}:{name} grad: {param.grad}")
+            #    else:
+            #        print(f"{i}:{name} grad is None")
       
             self.new_actor_optimizer.step()
             losses.append(loss)
@@ -179,7 +180,9 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time,temperature):
     return rik
 
 
-def execute_data(persona_num,data_name):
+def objective(trial):
+    data_name = "NIPS"
+    persona_num = 4
     ##デバッグ用
     torch.autograd.set_detect_anomaly(True)
     #alpha,betaの読み込み
@@ -219,13 +222,18 @@ def execute_data(persona_num,data_name):
     print("gamma",gamma)
 
     #パラメータ
-    mu = 0.8922
-    lr = 0.0039517
-    temperature = 0.1
+    lr = trial.suggest_float("lr", 1e-6, 1e-1, log=True)
+    mu = trial.suggest_float("mu", 0.7, 0.98, log=True)
+    temperature = trial.suggest_float("tem", 1e-4, 1, log=True)
+    r = trial.suggest_float("r", 0.5, 1, log=True)
+    w = trial.suggest_float("w", 0.5, 1, log=True)
+
+
+
     T = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
     e = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    r = torch.tensor([0.8 for _ in range(persona_num)], dtype=torch.float32)
-    w = torch.tensor([0.76 for _ in range(persona_num)], dtype=torch.float32)
+    r = torch.tensor([r for _ in range(persona_num)], dtype=torch.float32)
+    w = torch.tensor([w for _ in range(persona_num)], dtype=torch.float32)
   
 
     ln = 0
@@ -260,10 +268,10 @@ def execute_data(persona_num,data_name):
                 )
                       
             # スムージングファクター
-            clip_ration = 0.2
-            updated_prob_tensor = (1 - clip_ration) * mixture_ratio + clip_ration * new_mixture_ratio
-            mixture_ratio = updated_prob_tensor
-            #mixture_ratio = new_mixture_ratio
+            #clip_ration = 0.1
+            #updated_prob_tensor = (1 - clip_ration) * mixture_ratio + clip_ration * new_mixture_ratio
+            #mixture_ratio = updated_prob_tensor
+            mixture_ratio = new_mixture_ratio
 
         #personaはじめは均等
         if episode == 0:
@@ -310,8 +318,9 @@ def execute_data(persona_num,data_name):
         episodes_reward.append(episode_reward)
         print("epsiode_rewaerd",episodes_reward[-1])
         T,e,r,w= agents.train(mu)
-        #print("persona_ration",mixture_ratio)
+        print("パラメータ",T,e,r,w)
 
+    
 
         ln_before = ln
         ln = agents.ln
@@ -357,14 +366,16 @@ def execute_data(persona_num,data_name):
                       
 
     # スムージングファクター
-    #
-    # a = 0.1
+    #a = 0.1
     #print("nm",new_mixture_ratio)
     #updated_prob_tensor = (1 - a) * mixture_ratio + a * new_mixture_ratio
     mixture_ratio = new_mixture_ratio
     agents = PPO(obs,agent_num, input_size, action_dim,lr, gamma,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
 
-
+    edge_auc = 0
+    attr_auc = 0
+    attr_auc_log = []
+    edge_auc_log = []
         
     for count in range(10):
 
@@ -406,7 +417,10 @@ def execute_data(persona_num,data_name):
                     torch.from_numpy(attr_predict_probs),
                     torch.from_numpy(attr_test),
                 )
+             
                 auc_actv = roc_auc_score(attr_test, attr_predict_probs)
+                attr_auc += auc_actv/ (TOTAL_TIME - GENERATE_TIME)
+                attr_auc_log.append(auc_actv)
     
             finally:
                 print("attr auc, t={}:".format(test_time), auc_actv)
@@ -446,36 +460,27 @@ def execute_data(persona_num,data_name):
                 torch.from_numpy(edge_predict_probs),
                 torch.from_numpy(edge_test),
             )
-            auc_calc = roc_auc_score(edge_test, edge_predict_probs)
+            auc_actv = roc_auc_score(edge_test, edge_predict_probs)
+            edge_auc += auc_actv / (TOTAL_TIME - GENERATE_TIME)
+            edge_auc_log.append(auc_actv)
   
             #print("-------")
-            print("edge auc, t={}:".format(test_time), auc_calc)
+            
             #print("edge nll, t={}:".format(t), error_edge.item())
             #print("-------")
 
-            calc_log[count][test_time] = auc_calc
-            calc_nll_log[count][test_time] = error_edge.item()
             agents.memory.clear()
+            print((edge_auc + attr_auc) / 2)
 
+        del obs,agents,mixture_ratio
 
-
-    np.save("experiment_data/{}/param/persona={}/proposed_edge_auc".format(data_name,persona_num), calc_log)
-    np.save("experiment_data/{}/param/persona={}/proposed_edge_nll".format(data_name,persona_num), calc_nll_log)
-    np.save("experiment_data/{}/param/persona={}/proposed_attr_auc".format(data_name,persona_num), attr_calc_log)
-    np.save("experiment_data/{}/param/persona={}/proposed_attr_nll".format(data_name,persona_num), attr_calc_nll_log)
-    print("t",T,"e",e,"r",r,"w",w)
-    print(mixture_ratio)
-    np.save("experiment_data/{}/param/persona={}/persona_ration".format(data_name,persona_num),np.concatenate([mixture_ratio.detach().numpy()],axis=0))
-    np.save("experiment_data/{}/param/persona={}/paramerter".format(data_name,persona_num),np.concatenate([T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()],axis=0))
+        return  (edge_auc + attr_auc) / 2
 
 
   
 
 
-
-
 if __name__ == "__main__":
-    #[5,12,24,64,128,256],24,64,128,256
-    #[4,8,12,16]
-    for i in [5]:
-        execute_data(i,"NIPS")
+    study = optuna.create_study(direction="maximize")  # Use "minimize" if you want to minimize the objective
+    study.optimize(objective, n_trials=50)
+    print(study.best_params)  # Print the best hyperparameters

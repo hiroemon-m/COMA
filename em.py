@@ -15,8 +15,8 @@ def init_gaussian_param():
         μ: 平均値
         sigma: 共分散行列
     """
-    mean = np.random.rand(1, 2) * 10
-    sigma = [[1, 0], [0, 1]]
+    mean = np.random.rand(1, 3) * 10
+    sigma = [[1,0,0], [0,1,0],[0,0,1]]
     return mean, sigma
 
 
@@ -95,62 +95,72 @@ def em_algorithm(N, K, X, means, sigmas):
 def tolist(data) -> None:
     np_alpha = []
     np_beta = []
+    np_gamma = []
 
     with open(data, "r") as f:
         lines = f.readlines()
+        
         #print(lines)
         for index, line in enumerate(lines):
             datas = line[:-1].split(",")
+            print(datas[2])
             np_alpha.append(np.float32(datas[0]))
-            np_beta.append(np.float32(datas[1].replace("\n","")))
+            np_beta.append(np.float32(datas[1]))
+            np_gamma.append(np.float32(datas[2]))
 
-    return np_alpha,np_beta
+    return np_alpha,np_beta,np_gamma
 
 
 
 if __name__ == "__main__": 
-    path = "gamma/DBLP/model.param.data.fast"
-    dblp_alpha,dblp_beta = tolist(path)
-    data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta})
+    data_name = "NIPS"
+    path = "gamma/{}/model.param.data.fast".format(data_name)
+    dblp_alpha,dblp_beta,dblp_gamma = tolist(path)
+    data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta,"gamma":dblp_gamma})
     
     transformer = MinMaxScaler()
     norm = transformer.fit_transform(data_dblp)
-    print(norm)
+
     data_norm = data_dblp.copy(deep=True)
     data_norm["alpha"] = norm[:,0]
     data_norm["beta"] = norm[:,1]
+    data_norm["gamma"] = norm[:,2]
     
-    alpha,beta = tolist(path)
-    data = pd.DataFrame({"alpha":alpha,"beta":beta})
+    alpha,beta,gamma = tolist(path)
+    data = pd.DataFrame({"alpha":alpha,"beta":beta,"gamma":gamma})
     dblp_array = np.array([data_norm["alpha"].tolist(),
-                      data_norm["beta"].tolist()])
+                      data_norm["beta"].tolist(),data_norm["gamma"].tolist()])
     dblp_array = dblp_array.T
-    num = 256
+    num = len(dblp_alpha)
+  
     pred = KMeans(n_clusters=num).fit_predict(dblp_array)
     dblp_kmean = data_norm
     dblp_kmean["cluster_id"] = pred
     
 
 
-    data = data.loc[:,"alpha":"beta"]
+    data = data.loc[:,["alpha","beta","gamma"]]
     # (サンプル数, 特徴量の次元数) の2次元配列で表されるデータセットを作成する。
     # 変換器を作成する。
     transformer = MinMaxScaler()
     # 変換する。
-    data.loc[:,"alpha":"beta"] = transformer.fit_transform(data)
+    data.loc[:,["alpha","beta","gamma"]] = transformer.fit_transform(data)
 
     em = 0
     li = []
-    for i in data["alpha"].tolist():
-        li.append([i])
-    for k,j in enumerate(data["beta"].tolist()):
-        li[k].append(j)
+    #for i in data["alpha"].tolist():
+    #    li.append([i])
+    #for k,j in enumerate(data["beta"].tolist()):
+    #    li[k].append(j)
+
+    for i in range(len(data["alpha"].tolist())):
+        li.append([data["alpha"][i],data["beta"][i],data["gamma"][i]])
 
 
     em = np.array(li)
     
-    alpha,beta = tolist(path)
-    data = pd.DataFrame({"alpha":alpha,"beta":beta})
+    alpha,beta,gamma = tolist(path)
+    data = pd.DataFrame({"alpha":alpha,"beta":beta,"gamma":gamma})
     dblp_kmean = data_norm
     dblp_kmean["cluster_id"] = pred
     print(dblp_kmean["cluster_id"].value_counts())
@@ -161,11 +171,17 @@ if __name__ == "__main__":
 
         mean[i].append(dblp_kmean["alpha"][dblp_kmean["cluster_id"]==i].mean())
         mean[i].append(dblp_kmean["beta"][dblp_kmean["cluster_id"]==i].mean())
-        sigma.append(np.cov(dblp_kmean[dblp_kmean["cluster_id"]==i]["alpha"],dblp_kmean[dblp_kmean["cluster_id"]==i]["beta"],bias=True))
+        mean[i].append(dblp_kmean["gamma"][dblp_kmean["cluster_id"]==i].mean())
+        sigma.append(np.cov(mean[i],bias=False))
+        #sigma.append(np.cov(dblp_kmean[dblp_kmean["cluster_id"]==i]["alpha"],dblp_kmean[dblp_kmean["cluster_id"]==i]["beta"],dblp_kmean[dblp_kmean["cluster_id"]==i]["gamma"],bias=True))
 
     means = []
     for i in mean:
         means.append(np.array(i))
+    print("aaa")
+    print(dblp_kmean["cluster_id"])
+    print(mean)
+    print(sigma)
     gamma,means = em_algorithm(len(alpha),num,em,means,sigma)
     original_means = transformer.inverse_transform(means)
     print(gamma)
@@ -173,11 +189,11 @@ if __name__ == "__main__":
     print("orginal-mean",original_means)
     np.argmax(gamma,axis=1)
     np.save(
-    "gamma/DBLP/gamma{}".format(num), # データを保存するファイル名
+    "gamma/{}/gamma{}".format(data_name,num), # データを保存するファイル名
     gamma,  # 配列型オブジェクト（listやnp.array)
     )
     np.save(
-    "gamma/DBLP/means{}".format(num), # データを保存するファイル名
+    "gamma/{}/means{}".format(data_name,num), # データを保存するファイル名
     original_means,  # 配列型オブジェクト（listやnp.array)
     )
     

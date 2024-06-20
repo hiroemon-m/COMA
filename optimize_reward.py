@@ -16,11 +16,6 @@ from init_real_data import init_real_data
 device = config.select_device
 
 
-class Interest(IntEnum):
-    RED = 2
-    BLUE = 1
-
-
 class Model(nn.Module):
     def __init__(self, alpha, beta, gamma):
         super().__init__()
@@ -37,8 +32,8 @@ class Optimizer:
         self.feats = feats
         self.model = model
         self.size = size
+        self.optimizer = optim.SGD(self.model.parameters(), lr=0.005)
 
-        self.optimizer = optim.SGD(self.model.parameters(), lr=0.01)
         return
 
     def optimize(self, t: int):
@@ -47,40 +42,49 @@ class Optimizer:
         self.optimizer.zero_grad()
         dot_product = torch.matmul(feat, torch.t(feat)).to(device)
         sim = torch.mul(edge, dot_product)
+        print("sims",sim.size())
         sim = torch.mul(sim, self.model.alpha)
         sim = torch.add(sim, 0.001)
 
         costs = torch.mul(edge, self.model.beta)
         costs = torch.add(costs, 0.001)
-        if t>1:
-            impact = torch.sum(torch.mm(self.edges[t],self.feats[t]) - torch.mm(self.edges[t],self.feats[t])**2)
-        else:
-            impact = torch.sum(torch.mm(self.edges[t],self.feats[t])**2)
+        reward = torch.sub(sim, costs)
+      
 
-        #reward = torch.sub(sim, costs)
-        impacts = torch.mul(impact,self.model.gamma)
-        reward = sim - costs + impacts
+        if t > 0:
+            new_feature = torch.matmul(self.edges[t],self.feats[t])
+            new_feature = torch.matmul(new_feature,torch.t(new_feature))
+            old_feature = torch.matmul(self.edges[t-1], self.feats[t-1])
+            old_feature = torch.matmul(old_feature,torch.t(old_feature))
+
+            reward += (
+                #self.model.gamma/torch.sqrt(torch.sum(torch.abs(new_feature - old_feature)**2))
+                self.model.gamma*(torch.abs(new_feature - old_feature)+1e-4)
+            )
+            print(torch.abs(new_feature - old_feature)+1e-4)
+
+  
         loss = -reward.sum()
-
         loss.backward()
-        print(loss)
         del loss
         self.optimizer.step()
-        
-        #グラフデータの可視化
+
        
 
 
     def export_param(self):
-        with open("gamma/NIPS/model.param.data.fast", "w") as f:
+        #gamma/NIPS/
+        with open("gamma/Reddit/model.param.data.fast", "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
+            max_gamma = 1.0
 
             for i in range(self.size):
                 f.write(
-                    "{},{}\n".format(
+                    "{},{},{}\n".format(
                         self.model.alpha[i].item() / max_alpha,
                         self.model.beta[i].item() / max_beta,
+                        self.model.gamma[i].item() / max_gamma,
                     )
                 )
 
@@ -126,8 +130,6 @@ if __name__ == "__main__":
         #print(data.adj[n][i].sum())
         #print(data.feature[n][i].sum())
 
-   
-
 
     #data.adj[4][i,:] = 0
     #data.adj[4][:,i] = 0
@@ -135,11 +137,8 @@ if __name__ == "__main__":
 
 
 
-
-
     optimizer = Optimizer(data.adj, data.feature, model, data_size)
    
     for t in range(5):
         optimizer.optimize(t)
-
     optimizer.export_param()

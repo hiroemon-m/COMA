@@ -16,8 +16,8 @@ def init_gaussian_param():
         μ: 平均値
         sigma: 共分散行列
     """
-    mean = np.random.rand(1, 2) * 10
-    sigma = [[1, 0], [0, 1]]
+    mean = np.random.rand(1, 3) * 10
+    sigma = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
     return mean, sigma
 
 
@@ -96,6 +96,7 @@ def em_algorithm(N, K, X, means, sigmas):
 def tolist(data) -> None:
     np_alpha = []
     np_beta = []
+    np_gamma = []
 
     with open(data, "r") as f:
         lines = f.readlines()
@@ -103,48 +104,53 @@ def tolist(data) -> None:
         for index, line in enumerate(lines):
             datas = line[:-1].split(",")
             np_alpha.append(np.float32(datas[0]))
-            np_beta.append(np.float32(datas[1].replace("\n","")))
+            np_beta.append(np.float32(datas[1]))
+            np_gamma.append(np.float32(datas[2]))
 
-    return np_alpha,np_beta
+    return np_alpha,np_beta,np_gamma
 
 
 
 if __name__ == "__main__": 
-    path_n = "gamma/complete/"
+    path_n = "gamma/NIPS/"
     path =path_n + "model.param.data.fast"
-    num = 4
+    num = 5
     N = 32
-    dblp_alpha,dblp_beta = tolist(path)
-    data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta})
+    dblp_alpha,dblp_beta,dblp_gamma = tolist(path)
+    data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta,"gamma":dblp_gamma})
     
     transformer = MinMaxScaler()
     norm = transformer.fit_transform(data_dblp)
     data_norm = data_dblp.copy(deep=True)
+    print("norm",norm)
     data_norm["alpha"] = norm[:,0]
     data_norm["beta"] = norm[:,1]
-    alpha,beta = tolist(path)
-    data = pd.DataFrame({"alpha":alpha,"beta":beta})
+    data_norm["gamma"] = norm[:,2]
+    alpha,beta,gamma = tolist(path)
+    data = pd.DataFrame({"alpha":alpha,"beta":beta,"gamma":dblp_gamma})
     dblp_array = np.array([data_norm["alpha"].tolist(),
-                      data_norm["beta"].tolist()])
+                      data_norm["beta"].tolist(),
+                      data_norm["gamma"].tolist()
+                      ])
     dblp_array = dblp_array.T
 
     pred = KMeans(n_clusters=num).fit_predict(dblp_array)
     dblp_kmean = data_norm
     dblp_kmean["cluster_id"] = pred
   
-    print(pred)
+
     persona_tnsor = torch.zeros(N,num)
     for i in range(len(pred)):
         persona_tnsor[i,pred[i]]=1
     #print(persona_tnsor)
-    print(pred)
-    mean = [[]for i in range(num)]
-    sigma = []
-    for i in range(num):
 
+    mean = [[]for i in range(num)]
+
+    for i in range(num):
         mean[i].append(dblp_kmean["alpha"][dblp_kmean["cluster_id"]==i].mean())
         mean[i].append(dblp_kmean["beta"][dblp_kmean["cluster_id"]==i].mean())
-        sigma.append(np.cov(dblp_kmean[dblp_kmean["cluster_id"]==i]["alpha"],dblp_kmean[dblp_kmean["cluster_id"]==i]["beta"],bias=True))
+        mean[i].append(dblp_kmean["gamma"][dblp_kmean["cluster_id"]==i].mean())
+        
 
     means = []
     for i in mean:
@@ -154,12 +160,12 @@ if __name__ == "__main__":
 
     np.save(
     #"gamma/imcomplete/gamma{}".format(num), # データを保存するファイル名
-    path_n+"k-mean/gamma{}".format(num), # データを保存するファイル名
+    path_n+"/gamma{}".format(num), # データを保存するファイル名
     persona_tnsor,  # 配列型オブジェクト（listやnp.array)
     )
     np.save(
     #"gamma/imcomplete/means{}".format(num), # データを保存するファイル名
-     path_n+"k-mean/means{}".format(num), # データを保存するファイル名
+     path_n+"/means{}".format(num), # データを保存するファイル名
     means,  # 配列型オブジェクト（listやnp.array)
     )
     
