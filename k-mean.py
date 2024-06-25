@@ -1,6 +1,6 @@
 from numpy import linalg as LA
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler,Normalizer
 from sklearn.cluster import KMeans
 import pandas as pd
 import torch
@@ -112,20 +112,20 @@ def tolist(data) -> None:
 
 
 if __name__ == "__main__": 
-    path_n = "gamma/NIPS/"
+    path_n = "gamma/DBLP/"
     path =path_n + "model.param.data.fast"
-    num = 5
-    N = 32
+    num = 128
+    N = 500
     dblp_alpha,dblp_beta,dblp_gamma = tolist(path)
     data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta,"gamma":dblp_gamma})
-    
-    transformer = MinMaxScaler()
-    norm = transformer.fit_transform(data_dblp)
-    data_norm = data_dblp.copy(deep=True)
-    print("norm",norm)
-    data_norm["alpha"] = norm[:,0]
-    data_norm["beta"] = norm[:,1]
-    data_norm["gamma"] = norm[:,2]
+    data_norm = data_dblp
+    #transformer = MinMaxScaler()
+    #transformer = Normalizer(norm="l1")
+    #norm = transformer.fit_transform(data_dblp)
+    #data_norm = data_dblp.copy(deep=True)
+    #data_norm["alpha"] = norm[:,0]
+    #data_norm["beta"] = norm[:,1]
+    #data_norm["gamma"] = norm[:,2]
     alpha,beta,gamma = tolist(path)
     data = pd.DataFrame({"alpha":alpha,"beta":beta,"gamma":dblp_gamma})
     dblp_array = np.array([data_norm["alpha"].tolist(),

@@ -40,7 +40,9 @@ class Optimizer:
         feat = self.feats[t].to(device)
         edge = self.edges[t].to(device)
         self.optimizer.zero_grad()
-        dot_product = torch.matmul(feat, torch.t(feat)).to(device)
+        norm = feat.norm(dim=1)[:, None] + 1e-8
+        feat_norm = feat.div(norm)
+        dot_product = torch.matmul(feat_norm, torch.t(feat_norm)).to(device)
         sim = torch.mul(edge, dot_product)
         print("sims",sim.size())
         sim = torch.mul(sim, self.model.alpha)
@@ -60,6 +62,8 @@ class Optimizer:
             reward += (
                 #self.model.gamma/torch.sqrt(torch.sum(torch.abs(new_feature - old_feature)**2))
                 self.model.gamma*(torch.abs(new_feature - old_feature)+1e-4)
+                #self.model.gamma/(torch.sqrt(torch.abs(new_feature - old_feature)+1e-4)**2)
+
             )
             print(torch.abs(new_feature - old_feature)+1e-4)
 
@@ -74,7 +78,7 @@ class Optimizer:
 
     def export_param(self):
         #gamma/NIPS/
-        with open("gamma/Reddit/model.param.data.fast", "w") as f:
+        with open("gamma/DBLP/model.param.data.fast", "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
             max_gamma = 1.0

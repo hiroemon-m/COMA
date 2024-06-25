@@ -7,6 +7,9 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
 import tensorflow as tf
+from sklearn.metrics import roc_curve
+from sklearn.metrics import precision_recall_curve, auc
+import matplotlib.pyplot as plt
 
 # First Party Library
 import csv
@@ -50,8 +53,8 @@ class PPO:
             prob エッジ方策確率
             feat 属性値
         """
-        prob,feat = self.actor.predict(feat,edges,time)
-        return prob,feat
+        prob,edge,feat = self.actor.predict(feat,edges,time)
+        return prob,edge,feat
     
     
 
@@ -99,13 +102,13 @@ class PPO:
         #slf.,memory.reward 10x32x1
         #r1x32x1
         losses = []
-        for i in range(3):
+        for i in range(2):
             G,loss = 0,0
             for i in range(storycount):
         
                 old_policy = self.memory.probs[i]   
-                new_policy,_ =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i],i)
-                ratio =torch.exp(torch.log(new_policy+1e-7) - torch.log(old_policy+1e-7))
+                new_policy =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i],i)
+                ratio =torch.exp(torch.log(new_policy+1e-1) - torch.log(old_policy+1e-1))
                 ratio_clipped = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
                 #G = G_r[i] - baseline[i]
                 G = G_r[i] - baseline[i]
@@ -113,6 +116,10 @@ class PPO:
                 reward_clipped = ratio_clipped * G
                 reward = torch.min(reward_unclipped, reward_clipped)
                 # 最大化のために-1を掛ける
+                #print("Er",torch.sum(torch.log(new_policy[i])))
+                #print("ra",ratio,ratio_clipped)
+                #print("ra",torch.sum(torch.isnan(ratio)),torch.sum(torch.isnan(ratio_clipped)))
+                #print("reward",torch.sum(reward_unclipped),torch.sum(reward_clipped))
                 loss = loss - torch.sum(torch.log(new_policy[i])*reward)
 
             self.new_actor_optimizer.zero_grad()
@@ -123,13 +130,16 @@ class PPO:
             #    if param.grad is not None:
             #        param.grad.data = param.grad.data / (param.grad.data.norm() + 1e-6)
 
-            for name, param in self.new_actor.named_parameters():
-                if param.grad is not None:
-                    print(f"{i}:{name} grad: {param.grad}")
-                else:
-                    print(f"{i}:{name} grad is None")
-      
+            torch.nn.utils.clip_grad_norm_(self.new_actor.parameters(), 5)
+
+            #for name, param in self.new_actor.named_parameters():
+            #    if param.grad is not None:
+            #        print(f"{i}:{name} grad: {param.grad}")
+            #    else:
+            #        print(f"{i}:{name} grad is None")
+
             self.new_actor_optimizer.step()
+            print("update",self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.W)
             losses.append(loss)
         
         del G_r,baseline
@@ -188,6 +198,7 @@ def execute_data(persona_num,data_name):
     else:
         action_dim = 500
 
+
     LEARNED_TIME = 4
     GENERATE_TIME = 5
     TOTAL_TIME = 10
@@ -220,12 +231,12 @@ def execute_data(persona_num,data_name):
 
     #パラメータ
     mu = 0.8922
-    lr = 0.0039517
-    temperature = 0.1
+    lr = 0.01
+    temperature = 0.01
     T = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
     e = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    r = torch.tensor([0.8 for _ in range(persona_num)], dtype=torch.float32)
-    w = torch.tensor([0.76 for _ in range(persona_num)], dtype=torch.float32)
+    r = torch.tensor([0.75 for _ in range(persona_num)], dtype=torch.float32)
+    w = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
   
 
     ln = 0
@@ -260,10 +271,12 @@ def execute_data(persona_num,data_name):
                 )
                       
             # スムージングファクター
-            clip_ration = 0.2
-            updated_prob_tensor = (1 - clip_ration) * mixture_ratio + clip_ration * new_mixture_ratio
-            mixture_ratio = updated_prob_tensor
-            #mixture_ratio = new_mixture_ratio
+            if episode <= 10:
+                clip_ration = 0.2
+                updated_prob_tensor = (1 - clip_ration) * mixture_ratio + clip_ration * new_mixture_ratio
+                mixture_ratio = updated_prob_tensor
+            else:
+                mixture_ratio = new_mixture_ratio
 
         #personaはじめは均等
         if episode == 0:
@@ -288,19 +301,21 @@ def execute_data(persona_num,data_name):
         
         agents = PPO(obs,agent_num, input_size, action_dim,lr, mu,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
         episode_reward = 0
+        #print("persona_ration",mixture_ratio)
 
         for time in range(story_count):
 
             edge,feature = obs.state()
-            edge_probs,feat_action= agents.get_actions(edge,feature,time)
-            edge_action = edge_probs.bernoulli()
+            edge_probs,edge_action,feat_action= agents.get_actions(edge,feature,time)
+
             #属性値を確率分布の出力と考えているので、ベルヌーイ分布で値予測
     
             reward = obs.step(feat_action,edge_action,time)
             agents.memory.probs[time]=edge_probs.clone()
             agents.memory.edges[time] = edge.clone()
             agents.memory.features[time] = feature.clone()
-
+            print("pred_feat",torch.sum(feat_action))
+            print("pred_edge",torch.sum(edge_action))
             agents.memory.next_edges[time]=edge_action.clone()
             agents.memory.next_features[time]=feat_action.clone()
             agents.memory.reward[time]=reward.clone()
@@ -310,6 +325,8 @@ def execute_data(persona_num,data_name):
         episodes_reward.append(episode_reward)
         print("epsiode_rewaerd",episodes_reward[-1])
         T,e,r,w= agents.train(mu)
+        print("パラメータ",agents.new_actor.T,agents.new_actor.e,agents.new_actor.r,agents.new_actor.W)
+
         #print("persona_ration",mixture_ratio)
 
 
@@ -377,12 +394,12 @@ def execute_data(persona_num,data_name):
         for test_time in range(TOTAL_TIME - GENERATE_TIME):
 
             edges, feature = obs.state()
-            edge_prob ,feat_prob ,feat_action = agents.actor.test(edges,feature,test_time)
-            reward = obs.step(feat_action,edge_prob.bernoulli(),test_time)
+            edge_action,edge_prob ,feat_prob ,feat_action = agents.actor.test(edges,feature,test_time)
+            reward = obs.step(feat_action,edge_action,test_time)
 
             #属性値の評価 
-            target_prob = torch.ravel(feat_prob).to("cpu")
-            target_prob = target_prob.to("cpu").detach().numpy()
+            pred_prob = torch.ravel(feat_prob).to("cpu")
+            pred_prob = pred_prob.to("cpu").detach().numpy()
 
             detach_attr = (
                 torch.ravel(load_data.feature[GENERATE_TIME + test_time])
@@ -393,44 +410,66 @@ def execute_data(persona_num,data_name):
             detach_attr[detach_attr > 0] = 1.0
             pos_attr = detach_attr.numpy()
             attr_test = np.concatenate([pos_attr], 0)
+            attr_predict_probs = np.concatenate([pred_prob], 0)
+            print("属性値の総数")
+        
+            print("pred feat sum",attr_predict_probs.reshape((32, -1)).sum(axis=1))
+            print("target edge sum",attr_test.reshape((32, -1)).sum(axis=1))
+            print("pred feat sum",attr_predict_probs.sum())
+            print("target edge sum",attr_test.sum())
             
-            print("pred feat sum",target_prob.sum())
-            print("target feat sum",pos_attr.sum())
 
-            attr_predict_probs = np.concatenate([target_prob], 0)
 
             try:
+                
                 # NLLを計算
                 criterion = nn.CrossEntropyLoss()
                 error_attr = criterion(
                     torch.from_numpy(attr_predict_probs),
                     torch.from_numpy(attr_test),
                 )
-                auc_actv = roc_auc_score(attr_test, attr_predict_probs)
+               
+                precision, recall, _ = precision_recall_curve(attr_test, attr_predict_probs)
+                plt.figure()
+                plt.plot(precision, recall, marker='o')
     
+                plt.xlabel('FPR: False positive rate')
+                plt.ylabel('TPR: True positive rate')
+
+                plt.grid()
+                plt.savefig('sklearn_pr_curve.png')
+                pr_auc = auc(recall, precision)
+                auc_actv = roc_auc_score(attr_test, attr_predict_probs)
+ 
+                fpr_a ,tpr_a, thresholds = roc_curve(1-attr_test, 1-attr_predict_probs)
+                plt.figure()
+                plt.plot(fpr_a, tpr_a, marker='o')
+    
+                plt.xlabel('FPR: False positive rate')
+                plt.ylabel('TPR: True positive rate')
+
+                plt.grid()
+                plt.savefig('sklearn_roc_curve.png')
+               
             finally:
                 print("attr auc, t={}:".format(test_time), auc_actv)
+                #print("attr auc, t={}:".format(test_time), pr_auc)
                 #print("attr nll, t={}:".format(t), error_attr.item())
+                #attr_calc_log[count][test_time] = auc_actv
                 attr_calc_log[count][test_time] = auc_actv
                 attr_calc_nll_log[count][test_time] = error_attr.item()
-            del (
-                target_prob,
-                pos_attr,
-                attr_test,
-                attr_predict_probs,
-                auc_actv,
-            )
-            gc.collect()
+            
+      
 
             #エッジの評価
 
             #予測データ
-            edge_test= edge_prob
+            target_prob= edge_prob
             #print("pi",pi_test)     
-            edge_test = edge_test.view(-1)
-            target_prob = edge_test.to("cpu").detach().numpy()
+            target_prob = target_prob.view(-1)
+            target_prob = target_prob.to("cpu").detach().numpy()
             edge_predict_probs = np.concatenate([target_prob], 0)
-
+            
             #テストデータ
             detach_edge = (
                 torch.ravel(load_data.adj[GENERATE_TIME + test_time])
@@ -441,18 +480,33 @@ def execute_data(persona_num,data_name):
             pos_edge = detach_edge.numpy()
             edge_test = np.concatenate([pos_edge], 0)
 
+            print("エッジの総数")
+            print("pred feat sum",edge_predict_probs.reshape((32, -1)).sum(axis=1))
+            print("target edge sum",edge_test.reshape((32, -1)).sum(axis=1))
+            print("pred feat sum",edge_predict_probs.sum())
+            print("target edge sum",edge_test.sum())
+
             criterion = nn.CrossEntropyLoss()
             error_edge = criterion(
                 torch.from_numpy(edge_predict_probs),
                 torch.from_numpy(edge_test),
             )
             auc_calc = roc_auc_score(edge_test, edge_predict_probs)
-  
+            #precision, recall, _ = precision_recall_curve(edge_test, edge_predict_probs)
+            #auc_calc = auc(recall, precision)
+            fpr, tpr, thresholds = roc_curve(edge_test, edge_predict_probs)
+            plt.clf()
+            plt.plot(fpr, tpr, marker='o')
+           
+            plt.xlabel('FPR: False positive rate')
+            plt.ylabel('TPR: True positive rate')
+            plt.grid()
+            plt.savefig('edge_sklearn_roc_curve.png')
             #print("-------")
             print("edge auc, t={}:".format(test_time), auc_calc)
             #print("edge nll, t={}:".format(t), error_edge.item())
             #print("-------")
-
+            print(T,e,r,w)
             calc_log[count][test_time] = auc_calc
             calc_nll_log[count][test_time] = error_edge.item()
             agents.memory.clear()
@@ -464,7 +518,7 @@ def execute_data(persona_num,data_name):
     np.save("experiment_data/{}/param/persona={}/proposed_attr_auc".format(data_name,persona_num), attr_calc_log)
     np.save("experiment_data/{}/param/persona={}/proposed_attr_nll".format(data_name,persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    print(mixture_ratio)
+    #print(mixture_ratio)
     np.save("experiment_data/{}/param/persona={}/persona_ration".format(data_name,persona_num),np.concatenate([mixture_ratio.detach().numpy()],axis=0))
     np.save("experiment_data/{}/param/persona={}/paramerter".format(data_name,persona_num),np.concatenate([T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()],axis=0))
 
@@ -475,7 +529,7 @@ def execute_data(persona_num,data_name):
 
 
 if __name__ == "__main__":
-    #[5,12,24,64,128,256],24,64,128,256
+    #[5,8,12,16,32,64,128]
     #[4,8,12,16]
-    for i in [5]:
-        execute_data(i,"NIPS")
+    for i in [5,8,12,16,32,64,128]:
+        execute_data(i,"DBLP")
