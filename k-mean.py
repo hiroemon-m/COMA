@@ -118,14 +118,15 @@ if __name__ == "__main__":
     N = 500
     dblp_alpha,dblp_beta,dblp_gamma = tolist(path)
     data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta,"gamma":dblp_gamma})
-    data_norm = data_dblp
-    #transformer = MinMaxScaler()
+    #data_norm = data_dblp
+    transformer = MinMaxScaler()
     #transformer = Normalizer(norm="l1")
-    #norm = transformer.fit_transform(data_dblp)
-    #data_norm = data_dblp.copy(deep=True)
-    #data_norm["alpha"] = norm[:,0]
-    #data_norm["beta"] = norm[:,1]
-    #data_norm["gamma"] = norm[:,2]
+    norm = transformer.fit_transform(data_dblp)
+    data_norm = data_dblp.copy(deep=True)
+    data_norm["alpha"] = norm[:,0]
+    data_norm["beta"] = norm[:,1]
+    data_norm["gamma"] = norm[:,2]
+    print("minmax",data_norm)
     alpha,beta,gamma = tolist(path)
     data = pd.DataFrame({"alpha":alpha,"beta":beta,"gamma":dblp_gamma})
     dblp_array = np.array([data_norm["alpha"].tolist(),

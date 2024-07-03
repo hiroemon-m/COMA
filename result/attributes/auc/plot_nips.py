@@ -50,8 +50,9 @@ plt.fill_between(left, rnn_m1 + rnn_std1, rnn_m1 - rnn_std1, alpha=0.3)
 
 
 # plt.plot(left, height_proposed, label="Proposed", lw=5)
-plt.plot(left, m1_attr, label="Netevolve", lw=5)
 plt.plot(left, m1_only_attr, label="Proposed", lw=5)
+plt.plot(left, m1_attr, label="Netevolve", lw=5)
+
 plt.plot(left, dual_m1, label="DualCast")
 plt.plot(left, rnn_m1, label="RNN")
 

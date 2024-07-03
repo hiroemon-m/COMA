@@ -37,23 +37,37 @@ class Optimizer:
         return
 
     def optimize(self, t: int):
+        impact = 0
         feat = self.feats[t].to(device)
-        edge = self.edges[t].to(device)
+        edge = self.edges[t].to(device) 
         self.optimizer.zero_grad()
         norm = feat.norm(dim=1)[:, None] + 1e-8
         feat_norm = feat.div(norm)
         dot_product = torch.matmul(feat_norm, torch.t(feat_norm)).to(device)
+
         sim = torch.mul(edge, dot_product)
-        print("sims",sim.size())
         sim = torch.mul(sim, self.model.alpha)
         sim = torch.add(sim, 0.001)
 
         costs = torch.mul(edge, self.model.beta)
         costs = torch.add(costs, 0.001)
         reward = torch.sub(sim, costs)
-      
+
+        #if t > 0:
+        #    trend = (torch.sum(self.feats[t-1],dim=0)>0).repeat(500,1)
+        #    trend = torch.where(trend>0,1,0)
+            #trend = torch.sum(self.feats[t-1],dim=0).repeat(500,1)
+        #    trend =  (trend - self.feats[t])/len(self.feats[0][0])
+            #trend =  (trend - self.feats[t])
+    
+
+        #    impact = (trend*self.model.gamma.view(500,-1)).sum()
+
+    
+                
 
         if t > 0:
+            print(self.edges[t])
             new_feature = torch.matmul(self.edges[t],self.feats[t])
             new_feature = torch.matmul(new_feature,torch.t(new_feature))
             old_feature = torch.matmul(self.edges[t-1], self.feats[t-1])
@@ -65,7 +79,7 @@ class Optimizer:
                 #self.model.gamma/(torch.sqrt(torch.abs(new_feature - old_feature)+1e-4)**2)
 
             )
-            print(torch.abs(new_feature - old_feature)+1e-4)
+        #    print(torch.abs(new_feature - old_feature)+1e-4)
 
   
         loss = -reward.sum()
@@ -139,10 +153,8 @@ if __name__ == "__main__":
     #data.adj[4][:,i] = 0
     #data.feature[4][i][:] = 0
 
-
-
     optimizer = Optimizer(data.adj, data.feature, model, data_size)
-   
+
     for t in range(5):
         optimizer.optimize(t)
     optimizer.export_param()

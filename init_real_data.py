@@ -1,3 +1,4 @@
+import torch
 # First Party Library
 from data_loader import (
     attr_graph_dynamic_spmat_DBLP,
@@ -41,7 +42,9 @@ def init_real_data() -> LoadDataset:
         _ = spmat2sptensor(feature_)
         feature[t] = _
 
-  
+    for l in range(5):
+        adj[l] = torch.tensor(torch.tensor(adj[l]) - torch.eye(500))
+
     return LoadDataset(
         adj=adj,
         feature=feature,

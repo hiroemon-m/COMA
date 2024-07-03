@@ -47,6 +47,15 @@ class Env:
         reward = 0
         #norm = next_feature.norm(dim=1)[:, None] + 1e-8
         #next_feature = next_feature.div(norm)
+        impact = 0
+        #if time>0:
+        #    persona_gamma = torch.mm(self.persona[time],self.gamma.view(self.persona[time].size()[1],1))
+        #    trend = (torch.sum( self.feature,dim=0)>0).repeat(500,1)
+        #    trend = torch.where(trend>0,1,0)
+        #    trend = (trend - next_feature)/self.feature.size()[1]
+        #    impact = (trend*persona_gamma.view(500,-1)).sum()
+
+    
         persona_gamma = torch.mm(self.persona[time],self.gamma.view(self.persona[time].size()[1],1))
         new_feature = torch.matmul(next_action,next_feature)
         new_feature = torch.matmul(new_feature,torch.t(new_feature))
@@ -54,6 +63,7 @@ class Env:
         old_feature = torch.matmul(old_feature,torch.t(old_feature))
         impact = torch.sum(torch.abs(new_feature - old_feature)+1e-4,dim=1)           
         reward = reward + impact.view(self.agent_num,1)*persona_gamma.view(self.agent_num,1)
+        #reward= reward + impact
         self.edges = next_action
         self.feature = next_feature
         norm = self.feature.norm(dim=1)[:, None] + 1e-8
@@ -68,6 +78,7 @@ class Env:
         costs = self.edges.sum(1).view(self.agent_num,1)*persona_beta.view(self.agent_num,1)
         costs_add = torch.add(costs, 0.001)
         reward = reward + torch.sub(sim_add, costs_add)
+        
 
         return reward
     
