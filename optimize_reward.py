@@ -69,13 +69,13 @@ class Optimizer:
         if t > 0:
             print(self.edges[t])
             new_feature = torch.matmul(self.edges[t],self.feats[t])
-            new_feature = torch.matmul(new_feature,torch.t(new_feature))
+            #new_feature = torch.matmul(new_feature,torch.t(new_feature))
             old_feature = torch.matmul(self.edges[t-1], self.feats[t-1])
-            old_feature = torch.matmul(old_feature,torch.t(old_feature))
+            #old_feature = torch.matmul(old_feature,torch.t(old_feature))
 
-            reward += (
+            reward += torch.sum((
                 #self.model.gamma/torch.sqrt(torch.sum(torch.abs(new_feature - old_feature)**2))
-                self.model.gamma*(torch.abs(new_feature - old_feature)+1e-4)
+                torch.matmul(self.model.gamma.view(1,-1),(torch.abs(new_feature - old_feature)+1e-4)))
                 #self.model.gamma/(torch.sqrt(torch.abs(new_feature - old_feature)+1e-4)**2)
 
             )

@@ -1,6 +1,6 @@
 from numpy import linalg as LA
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler,Normalizer
+from sklearn.preprocessing import MinMaxScaler,Normalizer,StandardScaler
 from sklearn.cluster import KMeans
 import pandas as pd
 import torch
@@ -119,8 +119,9 @@ if __name__ == "__main__":
     dblp_alpha,dblp_beta,dblp_gamma = tolist(path)
     data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta,"gamma":dblp_gamma})
     #data_norm = data_dblp
-    transformer = MinMaxScaler()
+    #transformer = MinMaxScaler()
     #transformer = Normalizer(norm="l1")
+    transformer = StandardScaler()
     norm = transformer.fit_transform(data_dblp)
     data_norm = data_dblp.copy(deep=True)
     data_norm["alpha"] = norm[:,0]

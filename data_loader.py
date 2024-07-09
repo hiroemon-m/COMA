@@ -134,6 +134,10 @@ class attr_graph_dynamic_spmat_DBLP:
             A_matrix = A_matrix.T.dot(G_matrix).T
             A = nx.DiGraph()
             self.A_list.append(A)
+            #変更(featを1にするために、下の2行を追加)
+            #A_matrix[A_matrix>0]=1.0
+            #self.Amat_list.append(A_matrix)
+            #変更前
             self.Amat_list.append(A_matrix)
             G_matrix = G_matrix.T.dot(G_matrix)
             G_matrix[G_matrix > 0] = 1.0
@@ -186,6 +190,10 @@ class attr_graph_dynamic_spmat_NIPS:
             A_matrix = A_matrix.T.dot(G_matrix).T
             A = nx.DiGraph()
             self.A_list.append(A)
+            #変更(featを1にするために、下の2行を追加)
+            #A_matrix[A_matrix>0]=1.0
+            #self.Amat_list.append(A_matrix)
+            #元々
             self.Amat_list.append(A_matrix)
             G_matrix = G_matrix.T.dot(G_matrix)
             G_matrix[G_matrix > 0] = 1.0

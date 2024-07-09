@@ -10,8 +10,8 @@ from data_loader import (
 
 TOTAL_TIME = 10
 # input_graph = attr_graph_dynamic_spmat_twitter(T=TOTAL_TIME)
-#input_graph = attr_graph_dynamic_spmat_NIPS(T=TOTAL_TIME)
-input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME)
+input_graph = attr_graph_dynamic_spmat_NIPS(T=TOTAL_TIME)
+#input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME)
 #input_graph = attr_graph_dynamic_spmat_Reddit(T=15)
 
 class LoadDataset:
@@ -24,8 +24,8 @@ class LoadDataset:
 
 
 def init_real_data() -> LoadDataset:
-    #input_graph = attr_graph_dynamic_spmat_NIPS(T=TOTAL_TIME)
-    input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME)   
+    input_graph = attr_graph_dynamic_spmat_NIPS(T=TOTAL_TIME)
+    #input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME)   
     #input_graph = attr_graph_dynamic_spmat_Reddit(T=15)
 
  
@@ -42,9 +42,7 @@ def init_real_data() -> LoadDataset:
         _ = spmat2sptensor(feature_)
         feature[t] = _
 
-    for l in range(5):
-        adj[l] = torch.tensor(torch.tensor(adj[l]) - torch.eye(500))
-
+    
     return LoadDataset(
         adj=adj,
         feature=feature,

@@ -1,7 +1,7 @@
 import torch
 
 class Memory:
-    def __init__(self, agent_num, action_dim,story_count,data_set):
+    def __init__(self, agent_num, action_dim,story_count,persoma_num,data_set):
         self.agent_num = agent_num
         self.action_dim = action_dim
         self.story_count = story_count
@@ -10,14 +10,14 @@ class Memory:
             self.attr_num = 2411
         else:
             self.attr_num = 3854
-        self.probs = torch.empty([self.story_count,self.agent_num,self.agent_num])
-        self.edges = torch.empty([self.story_count,self.agent_num,self.agent_num])
-        self.features = torch.empty([self.story_count,self.agent_num, self.attr_num])
-        self.next_edges = torch.empty([self.story_count,self.agent_num,self.agent_num])
-        self.next_features = torch.empty([self.story_count,self.agent_num, self.attr_num])
+        self.probs = torch.empty([self.story_count,persoma_num,self.agent_num,self.agent_num])
+        self.edges = torch.empty([self.story_count,persoma_num,self.agent_num,self.agent_num])
+        self.features = torch.empty([self.story_count,persoma_num,self.agent_num, self.attr_num])
+        self.next_edges = torch.empty([self.story_count,persoma_num,self.agent_num,self.agent_num])
+        self.next_features = torch.empty([self.story_count,persoma_num,self.agent_num, self.attr_num])
         #エージェントの数だけ行数がある
         self.pi = torch.empty([self.story_count,self.agent_num,self.agent_num])
-        self.reward = torch.empty([self.story_count,agent_num,1])
+        self.reward = torch.empty([self.story_count,persoma_num,agent_num,agent_num])
         #エージェントの数だけフラグがある
 
 

@@ -33,7 +33,7 @@ class PPO:
         self.gamma = gamma
         self.persona = rik
         self.story_count = story_count 
-        self.memory = Memory(agent_num, action_dim,self.story_count,data_set)
+        self.memory = Memory(agent_num, action_dim,self.story_count,len(self.persona[0][0]),data_set)
         self.obs = obs
         self.alpha = self.obs.alpha
         self.beta = self.obs.beta
@@ -47,20 +47,21 @@ class PPO:
         self.new_actor_optimizer = torch.optim.Adam(self.new_actor.parameters(), lr=lr) 
 
     #@profile
-    def get_actions(self, edges,feat,time):
+    def get_actions(self, edges,feat,time,old_feature):
+        
         """ 行動確率と属性値を計算する
         Input:エッジ,属性値
         Output:
             prob エッジ方策確率
             feat 属性値
         """
-        prob,edge,feat = self.actor.predict(feat,edges,time)
-        return prob,edge,feat
+        edge_prob,edge_action,feat_prob,feat_action,old_feature = self.actor.predict(feat,edges,time,old_feature)
+        return edge_prob,edge_action,feat_prob,feat_action,old_feature
     
     
 
     #@profile
-    def train(self,gamma):
+    def train(self,edge,feat,gamma,past_feature):
         """ 訓練用の関数
         Input:割引率
         Output:
@@ -70,12 +71,10 @@ class PPO:
         cliprange=0.2
         storycount = self.story_count
         lnpxz = self.memory.probs.view(-1).sum()
-    
-        G_r = torch.empty([storycount, self.agent_num, self.agent_num])
-   
+        G_r = torch.empty([storycount,len(self.persona[0][0]),self.agent_num, self.agent_num])
         #self.memory 10x32x1
         #収益の計算
-        baseline = torch.empty([storycount, self.agent_num, 1])
+        baseline = torch.empty([storycount,len(self.persona[0][0]),self.agent_num, self.agent_num])
 
         for r in range(len(self.memory.reward)-1, -1, -1):
 
@@ -84,7 +83,6 @@ class PPO:
 
             else:
                 G_r[r] = gamma*G_r[r+1].clone() + self.memory.reward[r].clone()
-       
 
         #baselineの作成
         for i in range(len(self.memory.reward)):
@@ -103,12 +101,14 @@ class PPO:
         #slf.,memory.reward 10x32x1
         #r1x32x1
   
-        for i in range(2):
+        for i in range(5):
             G,loss = 0,0
+            past_feature_t = past_feature
             for i in range(storycount):
         
                 old_policy = self.memory.probs[i]   
-                new_policy =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i],i)
+                new_policy,past_feature_t =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i],i,past_feature_t)
+                #new_policy,past_feature_t =  self.new_actor.forward(edge,feat,i,past_feature_t)
                 ratio =torch.exp(torch.log(new_policy+1e-1) - torch.log(old_policy+1e-1))
                 ratio_clipped = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
                 #G = G_r[i] - baseline[i]
@@ -116,31 +116,41 @@ class PPO:
                 reward_unclipped = ratio * G
                 reward_clipped = ratio_clipped * G
                 reward = torch.min(reward_unclipped, reward_clipped)
+
                 # 最大化のために-1を掛ける
                 #print("Er",torch.sum(torch.log(new_policy[i])))
                 #print("ra",ratio,ratio_clipped)
                 #print("ra",torch.sum(torch.isnan(ratio)),torch.sum(torch.isnan(ratio_clipped)))
                 #print("reward",torch.sum(reward_unclipped),torch.sum(reward_clipped))
-                loss = loss - torch.sum(torch.log(new_policy[i])*reward)
+                print("new*reward",torch.sum(torch.isnan(torch.log(new_policy)*reward)))
+                print("new",torch.sum(torch.isnan(torch.log(new_policy))))
+                print("reward",torch.sum(torch.isnan(reward)))
+                loss = loss - torch.sum(torch.log(new_policy)*reward)
 
-          
+            loss.retain_grad()
+            reward.retain_grad()
+            new_policy.retain_grad()
 
 
             self.new_actor_optimizer.zero_grad()
             loss.backward(retain_graph=True)
                         # 勾配の計算と適用
+            #print("a",new_policy.grad)
+            #print("r",reward.grad)
+            #print("loss",loss.grad)
+            #print("loss",loss)
             
             #for param in self.new_actor.parameters():
             #    if param.grad is not None:
             #        param.grad.data = param.grad.data / (param.grad.data.norm() + 1e-6)
 
-            torch.nn.utils.clip_grad_norm_(self.new_actor.parameters(), 5)
+            #torch.nn.utils.clip_grad_norm_(self.new_actor.parameters(), 1000)
 
-            #for name, param in self.new_actor.named_parameters():
-            #    if param.grad is not None:
-            #        print(f"{i}:{name} grad: {param.grad}")
-            #    else:
-            #        print(f"{i}:{name} grad is None")
+            for name, param in self.new_actor.named_parameters():
+                if param.grad is not None:
+                    print(f"{i}:{name} grad: {param.grad}")
+                else:
+                    print(f"{i}:{name} grad is None")
 
             self.new_actor_optimizer.step()
             print("update",self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.W)
@@ -153,14 +163,16 @@ class PPO:
         return T,e,r,e
     
 #@profile
-def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time,temperature):
+def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time,temperature,old_feature):
 
     actor = Actor(T,e,r,w,persona,agent_num,temperature)
+    past_feature = old_feature
 
     policy_prob = actor.calc_ration(
                 load_data.feature[base_time].clone(),
                 load_data.adj[base_time].clone(),
-                persona
+                persona,
+                past_feature
                 )
     
 
@@ -231,11 +243,11 @@ def execute_data(persona_num,data_name):
     means = np.load(path)
     means = means.astype("float32")
     means = torch.from_numpy(means).to(device)
-
     #重み(固定値)
-    alpha = means[:,0]
-    beta = means[:,1]
-    gamma = means[:,2]
+    
+    alpha = torch.tensor(means[:,0]).unsqueeze(1)
+    beta = torch.tensor(means[:,1]).unsqueeze(1)
+    gamma = torch.tensor(means[:,2]).unsqueeze(1)
 
     print("means",means)
     print("alpha",alpha)
@@ -245,22 +257,28 @@ def execute_data(persona_num,data_name):
     #パラメータ
     mu = 0.8922
     lr = 0.01
-    temperature = 0.01
+    temperature = 0.05
 
 
     
-    T = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    e = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    r = torch.tensor([0.75 for _ in range(persona_num)], dtype=torch.float32)
-    w = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    T = torch.tensor([[[1.0]] for _ in range(persona_num)], dtype=torch.float32)
+    e = torch.tensor([[[1.0]] for _ in range(persona_num)], dtype=torch.float32)
+    r = torch.tensor([[[0.75]] for _ in range(persona_num)], dtype=torch.float32)
+    w = torch.tensor([[[1.0]] for _ in range(persona_num)], dtype=torch.float32)
   
-
+    print("T.size",T.size())
     ln = 0
     ln_sub = 0
 
     flag = True
     episode = 0
     episodes_reward = []
+
+    old_feature = torch.empty(agent_num,input_size,requires_grad=False)
+
+    for i in range(5):
+        old_feature  = 0.8*old_feature + load_data.feature[i]
+
 
     while flag and ln_sub <= 1:
         
@@ -283,7 +301,8 @@ def execute_data(persona_num,data_name):
                 persona=persona_ration,
                 step = story_count,
                 base_time=LEARNED_TIME,
-                temperature=temperature
+                temperature=temperature,
+                old_feature=old_feature
                 )
      
                       
@@ -323,32 +342,43 @@ def execute_data(persona_num,data_name):
         episode_reward = 0
         print("persona_ration",mixture_ratio)
 
-        for time in range(story_count):
+        past_feature = old_feature
+        test_past_feature = old_feature
 
+        for time in range(story_count):
+            #初めは,32,32
+            #2回目は、ペルソナ毎に遷移が違う
             edge,feature = obs.state()
-            edge_probs,edge_action,feat_action= agents.get_actions(edge,feature,time)
+            #いらんかもedge_action,feat_action
+            #persona_edge persona_feat　用意してそれぞれの
+            edge_prob,edge_action,feat_prob,feat_action,past_feature= agents.get_actions(edge,feature,time,past_feature)
+         
 
 
             #属性値を確率分布の出力と考えているので、ベルヌーイ分布で値予測
-    
+            #ペルソナ毎のエッジとペルソナ毎の属性値を与えたい
             reward = obs.step(feat_action,edge_action,time)
-            agents.memory.probs[time]=edge_probs.clone()
+            #memoryはtrainで使う
+            agents.memory.probs[time]=edge_prob.clone()
             agents.memory.edges[time] = edge.clone()
             agents.memory.features[time] = feature.clone()
-            print("pred_feat",torch.sum(feat_action))
-            print("pred_edge",torch.sum(edge_action))
             agents.memory.next_edges[time]=edge_action.clone()
             agents.memory.next_features[time]=feat_action.clone()
-            agents.memory.reward[time]=reward.clone()
+            agents.memory.reward[time]=reward.detach().clone()
             episode_reward = episode_reward + reward.clone().detach().sum()
-            del edge,feature,edge_probs,edge_action,feat_action,reward
+            del edge,feature,edge_prob,edge_action,feat_action,reward
             gc.collect()
       
 
         episodes_reward.append(episode_reward)
         print("epsiode_rewaerd",episodes_reward[-1])
-        T,e,r,w= agents.train(mu)
+
+        T,e,r,w= agents.train(load_data.adj[LEARNED_TIME].clone(),load_data.feature[LEARNED_TIME].clone(),mu,test_past_feature)
         print("パラメータ",T,e,r,w)
+        del past_feature
+        gc.collect()
+  
+
 
         #print("persona_ration",mixture_ratio)
 
@@ -367,7 +397,7 @@ def execute_data(persona_num,data_name):
             print(episodes_reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
 
-        if episode >=50:
+        if episode >=20:
             flag = False
 
         else:
@@ -399,7 +429,8 @@ def execute_data(persona_num,data_name):
                 persona=persona_ration,
                 step = story_count,
                 base_time=LEARNED_TIME,
-                temperature=temperature
+                temperature=temperature,
+                old_feature=old_feature
             )
 
                       
@@ -414,19 +445,21 @@ def execute_data(persona_num,data_name):
 
 
         
-    for count in range(10):
+    for count in range(3):
 
         obs.reset(
             load_data.adj[LEARNED_TIME].clone(),
             load_data.feature[LEARNED_TIME].clone(),
             persona=mixture_ratio
         )
+
+        past_feature = old_feature
    
         for test_time in range(TOTAL_TIME - GENERATE_TIME):
 
             edges, feature = obs.state()
-            edge_action,edge_prob ,feat_prob ,feat_action = agents.actor.test(edges,feature,test_time)
-            reward = obs.step(feat_action,edge_action,test_time)
+            edge_action,edge_prob ,feat_prob ,feat_action,past_feature = agents.actor.test(edges,feature,test_time,past_feature)
+            reward = obs.test_step(feat_action,edge_action,test_time)
 
             #属性値の評価 
             pred_prob = torch.ravel(feat_prob).to("cpu")
@@ -445,10 +478,11 @@ def execute_data(persona_num,data_name):
             print("属性値の総数")
         
             #print("pred feat sum",attr_predict_probs.reshape((500, -1)).sum(axis=1))
-            #print("target edge sum",attr_test.reshape((500, -1)).sum(axis=1))
-            print("pred feat sum",attr_predict_probs.sum())
-            print("feat action sum",feat_action.sum())
-            print("target edge sum",attr_test.sum())
+            #print("target edge sum",attr_test.reshape((500, -1)).sum(axis=1))s
+            print("pred feat sum",torch.sum(feat_action))
+            print("pred feat sum",torch.sum(feat_action,dim=1))
+            print("target feat sum",attr_test[attr_test>0].sum())
+            print("target feat sum",torch.sum(load_data.feature[GENERATE_TIME + test_time]>0,dim=1))
             
 
 
@@ -474,6 +508,7 @@ def execute_data(persona_num,data_name):
                 auc_actv = roc_auc_score(attr_test, attr_predict_probs)
  
                 fpr_a ,tpr_a, thresholds = roc_curve(1-attr_test, 1-attr_predict_probs)
+
                 plt.figure()
                 plt.plot(fpr_a, tpr_a, marker='o')
     
@@ -512,12 +547,12 @@ def execute_data(persona_num,data_name):
             pos_edge = detach_edge.numpy()
             edge_test = np.concatenate([pos_edge], 0)
 
-            print("エッジの総数")
+            #print("エッジの総数")
             #print("pred feat sum",edge_predict_probs.reshape((500, -1)).sum(axis=1))
             #print("target edge sum",edge_test.reshape((500, -1)).sum(axis=1))
-            print("pred edge sum",edge_predict_probs.sum())
-            print("acction edge sum",edge_action.sum())
-            print("target edge sum",edge_test.sum())
+            #print("pred edge sum",edge_predict_probs.sum())
+            #print("acction edge sum",edge_action.sum())
+            #print("target edge sum",edge_test.sum())
 
             criterion = nn.CrossEntropyLoss()
             error_edge = criterion(
@@ -565,4 +600,4 @@ if __name__ == "__main__":
     #[5,8,12,16,24,32,64,128]
     #[4,8,12,16]
     for i in [5]:
-        execute_data(i,"DBLP")
+        execute_data(i,"NIPS")

@@ -28,6 +28,7 @@ class Actor(nn.Module):
         self.temperature = temperature
         self.persona = persona
         self.agent_num = agent_num
+
         
 
     def sample_gumbel(self,shape, eps=1e-20):
@@ -55,7 +56,7 @@ class Actor(nn.Module):
         return y
 
   
-    def calc_ration(self,attributes, edges,persona):
+    def calc_ration(self,attributes, edges,persona,past_feature):
 
         calc_policy = torch.empty(5,len(persona[0][0]),self.agent_num,self.agent_num)
         # インプレース操作を回避するために新しい変数を使用して新しいテンソルを作成
@@ -64,22 +65,25 @@ class Actor(nn.Module):
         edges =edge_index.float()
 
         for i in range(len(persona[0][0])):
+            past_feature_t = past_feature
             for t in range(5):
 
                 trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
                 #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
                 #trend = torch.where(trend>0,1,0)
-                
-
                 feat_prob = torch.empty(len(attributes),len(attributes[0]),2)
-                tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
+                #tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
+
+                tmp_tensor = self.W[i] * torch.matmul(edges, attributes)
                 r = self.r[i]
                 feat = r * attributes + tmp_tensor * (1-r)
+                #feat = r * past_feature_t + tmp_tensor * (1-r)
                 feat_tanh = torch.tanh(feat)
                 feat_prob[:,:,0] = 10 - feat_tanh * 10
                 feat_prob[:,:,1] = feat_tanh * 10
                 feat= self.gumbel_softmax(feat_prob,hard=True)
                 feat = feat[:,:,1]
+                past_feature_t = 0.8*past_feature_t + feat
                 norm = feat.norm(dim=1)[:, None] + 1e-8
                 feat = feat.div(norm)
                 x = torch.mm(feat, feat.t())
@@ -92,9 +96,12 @@ class Actor(nn.Module):
                 min_values = torch.min(x, dim=0).values
                 max_values = torch.max(x, dim=0).values
                 x = (x - min_values) / ((max_values - min_values) + 1e-8)
+               
 
                 x = (1 - torch.exp(-x-x))/(1 + torch.exp(-x-x))
                 calc_policy[t][i] = x
+
+                
 
             
         return calc_policy
@@ -102,124 +109,154 @@ class Actor(nn.Module):
   
 
 
-    def forward(self,attributes, edges,time) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self,attributes, edges,time,past_feature) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """"trainで呼び出す"""
         edges_float = edges.float()
         edge_index = edges_float > 0
         edges =edge_index.float()
-        edges_prob = 0
 
+        attr_ber = torch.empty(len(self.persona[0][0]),len(attributes[0]),len(attributes[0][0]),2)
+        edge_ber = torch.empty(len(self.persona[0][0]),len(edges[0]),len(edges[0]),2)
+        edge_prob = torch.empty(len(self.persona[0][0]),len(edges[0]),len(edges[0][0])) 
+        attr_prob = torch.empty(len(self.persona[0][0]),len(attributes[0]),len(attributes[0][0])) 
             
-        for i in range(len(self.persona[0][0])):
-            trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
+        
+        trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
             #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
             #trend = torch.where(trend>0,1,0)
+
+        feat_prob = torch.empty(len(self.persona[0][0]),len(attributes[0]),len(attributes[0][0]),2)
+        #tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
+        tmp_tensor = self.W * torch.matmul(edges, attributes)
+        r = self.r
+
+        feat = r * attributes + tmp_tensor * (1-r)
+
+        feat_tanh = torch.tanh(feat)
+        feat_action = feat
+
+        feat_prob[:,:,:,0] = 10 - (feat_tanh * 10)
+        feat_prob[:,:,:,1] = (feat_tanh * 10)
+        feat_action= self.gumbel_softmax(feat_prob,hard=True)
+
+        feat_action = feat_action[:,:,:,1]
+
+        norm = feat_action.norm(dim=1)[:, None] + 1e-8
+        feat_action = feat_action.div(norm)
+        feat_t = torch.transpose(feat_action,2,1)
+        x = torch.matmul(feat_action, feat_t)
+        x = x.div(self.T)
+        x = torch.clamp(x,max=87)
+
+        x = torch.exp(x)
+        x = x*self.e
+
+        # Min-Max スケーリング
+        min_values = torch.min(x, dim=2).values
+        max_values = torch.max(x, dim=2).values
+        x = (x - min_values.unsqueeze(-1)) / ((max_values - min_values).unsqueeze(-1) + 1e-8)
+
+        x = (1 - torch.exp(-x-x))/(1 + torch.exp(-x-x))
+
         
+        #x = torch.tanh(x)
 
-            feat_prob = torch.empty(len(attributes),len(attributes[0]),2)     
-            tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
-            r = self.r[i]
-            feat = r * attributes + tmp_tensor * (1-r)
-            feat_tanh = torch.tanh(feat)
-            feat_prob[:,:,0] = 10 - feat_tanh*10
-            feat_prob[:,:,1] = feat_tanh*10
-            feat= self.gumbel_softmax(feat_prob,hard=True)
-            feat = feat[:,:,1]
-            norm = feat.norm(dim=1)[:, None] + 1e-8
-            feat = feat.div(norm)
-            x = torch.mm(feat, feat.t())
-            x = x.div(self.T[i]+1e-8)
-            x = torch.exp(x)
-            x = x*self.e[i]
+        edge_prob  = x +1e-5
 
-            # Min-Max スケーリング
-            min_values = torch.min(x, dim=0).values
-            max_values = torch.max(x, dim=0).values
-            x = (x - min_values) / ((max_values - min_values) + 1e-8)
+        attr_prob = feat_tanh
+        edge_prob =  torch.clamp(edge_prob,min=0,max=1)
 
-            x = (1 - torch.exp(-x-x))/(1 + torch.exp(-x-x))
-            x = self.persona[time][:,i]*x 
-            edges_prob = edges_prob + x
-        edges_prob = edges_prob + 1e-3
-        
+        past_feature = 0.8*past_feature 
 
 
-        return edges_prob
+        return edge_prob,past_feature
 
 
 
     
-    def predict(self,attributes, edges,time):
+    def predict(self,attributes, edges,time,past_feature):
 
         edges_float = edges.float()
         edge_index = edges_float > 0
         edges =edge_index.float()
-        attr_ber = torch.empty(len(attributes),len(attributes[0]),2)
-        edge_ber = torch.empty(len(edges),len(edges[0]),2)
-        edges_prob = 0
-        attr_prob = 0
+        attr_ber = torch.empty(len(self.persona[0][0]),len(attributes[0]),len(attributes[0][0]),2)
+        edge_ber = torch.empty(len(self.persona[0][0]),len(edges[0]),len(edges[0]),2)
+        edge_prob = torch.empty(len(self.persona[0][0]),len(edges[0]),len(edges[0][0])) 
+        attr_prob = torch.empty(len(self.persona[0][0]),len(attributes[0]),len(attributes[0][0]))
+
+        #w 
             
-        for i in range(len(self.persona[0][0])):
-            trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
-            #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
-            #trend = torch.where(trend>0,1,0)
+        
+        #iはペルソナ
+        trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
+        #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
+        #trend = torch.where(trend>0,1,0)
 
-            feat_prob = torch.empty(len(attributes),len(attributes[0]),2)
-            tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
-            feat = self.r[i] * attributes + tmp_tensor * (1-self.r[i])        
-            feat_tanh = torch.tanh(feat)
-            #print("fear",torch.sum(feat_tanh>0),feat_tanh.size())
-            #print("fear",feat_tanh[0,:12])
-            #print("fear",feat_tanh[0,12:24])
-            #print("fear",feat_tanh[0,24:])
-            feat_prob[:,:,0] = 10 - (feat_tanh * 10)
-            feat_prob[:,:,1] = (feat_tanh * 10)
-            feat_action= self.gumbel_softmax(feat_prob,hard=True)
-            #print("fear_prob12",feat_prob[0,:12])
-            #print("fear_prob24",feat_prob[0,12:24])
-            #print("fear_prob36",feat_prob[0,24:])
-            feat_action = feat_action[:,:,1]
-            #print("fear12",feat[0,:12])
-            #print("fear24",feat[0,12:24])
-            #print("fear36",feat[0,24:])
-            #print("count",torch.sum(attributes),torch.sum(feat))
-            norm = feat_action.norm(dim=1)[:, None] + 1e-8
-            feat_action = feat_action.div(norm)
-            x = torch.mm(feat_action, feat_action.t())
-            x = x.div(self.T[i])
-            x = torch.exp(x)
-            x = x*self.e[i]
+        feat_prob = torch.empty(len(self.persona[0][0]),len(attributes[0]),len(attributes[0][0]),2)
+        #tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
+        # torch.matmul(edges, attributes):4x32x3000
+        #r,w:4,1,1
+        tmp_tensor = self.W * torch.matmul(edges, attributes)
 
-            # Min-Max スケーリング
-            min_values = torch.min(x, dim=0).values
-            max_values = torch.max(x, dim=0).values
-            x = (x - min_values) / ((max_values - min_values) + 1e-8)
+        r = self.r
+        #4,32,3000
+        feat = r * attributes + tmp_tensor * (1-r)
 
-            x = (1 - torch.exp(-x-x))/(1 + torch.exp(-x-x))
-            #x = torch.tanh(x)
-            x = self.persona[time][:,i]*x
-            edges_prob = edges_prob + x
-            attr_prob = attr_prob + self.persona[time][:,i].view(-1,1)*feat_tanh
-            #edges_prob =  torch.clamp(edges_prob + x ,min=0,max=1)
+        feat_tanh = torch.tanh(feat)
+        feat_action = feat
+   
+        feat_prob[:,:,:,0] = 10 - (feat_tanh * 10)  
+        feat_prob[:,:,:,1] = (feat_tanh * 10)
+        feat_action= self.gumbel_softmax(feat_prob,hard=True)
+
+        feat_action = feat_action[:,:,:,1]
+
+        norm = feat_action.norm(dim=1)[:, None] + 1e-8
+        feat_action = feat_action.div(norm)
+        feat_t = torch.transpose(feat_action,2, 1)
+        x = torch.matmul(feat_action, feat_t)
+        x = x.div(self.T)
+        x = torch.clamp(x,max=87)
+        print(torch.max(x))
+        x = torch.exp(x)
+        x = x*self.e
+
+        # Min-Max スケーリング
+        min_values = torch.min(x, dim=2).values
+        max_values = torch.max(x, dim=2).values
+        x = (x - min_values.unsqueeze(-1)) / ((max_values - min_values).unsqueeze(-1) + 1e-8)
+
+        x = (1 - torch.exp(-x-x))/(1 + torch.exp(-x-x))
+        #x = torch.tanh(x)
+
+        edge_prob  = x +1e-5
+
+        edge_prob =  torch.clamp(edge_prob,min=0,max=1)
+
+        attr_prob = feat_tanh
+        #edges_prob =  torch.clamp(edges_prob + x ,min=0,max=1)
         
         #属性の調整
-        attr_prob = attr_prob*10
-        attr_ber[:,:,0] = 10 - attr_prob
-        attr_ber[:,:,1] = attr_prob
-        attr_action= self.gumbel_softmax(attr_ber)[:,:,1]
+        
+        attr_ber[:,:,:,0] = 10 - attr_prob*10
+        attr_ber[:,:,:,1] = attr_prob*10
+        attr_action= self.gumbel_softmax(attr_ber)[:,:,:,1]
         #print("be",torch.sum(edges_prob.bernoulli()))
         #print("edg",torch.sum(edges))
-        edge_prob = edges_prob*10
-        edge_ber[:,:,0] = 10 - edge_prob
-        edge_ber[:,:,1] = edge_prob
-        edge_action= self.gumbel_softmax(edge_ber)[:,:,1]
+      
 
+      
+        print("edge_prob",torch.sum(torch.isnan(edge_prob)))
+        edge_ber[:,:,:,0] = 10 - edge_prob*10
+        edge_ber[:,:,:,1] = edge_prob*10
 
+        edge_action= self.gumbel_softmax(edge_ber)[:,:,:,1]
+        past_feature = 0.8*past_feature + attr_action
 
-        return edges_prob,edge_action, attr_action
+        return edge_prob,edge_action,attr_prob,attr_action,past_feature
     
 
-    def test(self,edges,attributes,time):
+    def test(self,edges,attributes,time,past_feature):
         
         edges_float = edges.float()
         edge_index = edges_float > 0
@@ -228,6 +265,7 @@ class Actor(nn.Module):
         attr_prob = 0
         attr_ber = torch.empty(len(attributes),len(attributes[0]),2)
         edge_ber = torch.empty(len(edges),len(edges[0]),2)
+
             
         for i in range(len(self.persona[0][0])):
             trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
@@ -237,10 +275,13 @@ class Actor(nn.Module):
 
             feat_prob = torch.empty(len(attributes),len(attributes[0]),2)
     
-            tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
+            #tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
+            tmp_tensor = self.W[i] * torch.matmul(edges, attributes) 
             #torch.matmul(1-edges, attributes)
             r = self.r[i]
             feat = r * attributes + tmp_tensor * (1-r)
+            #feat = r * past_feature + tmp_tensor * (1-r)
+
             feat_tanh = torch.tanh(feat)
            
             feat_prob[:,:,0] = 10 - (feat_tanh*10)
@@ -276,7 +317,9 @@ class Actor(nn.Module):
         edge_ber[:,:,1] = edge_prob
         edge_action= self.gumbel_softmax(edge_ber)[:,:,1]
 
-        return edge_action,probability,attr_prob,attr_action
+        past_feature = 0.8*past_feature + attr_action
+
+        return edge_action,probability,attr_prob,attr_action,past_feature
 
 
 
