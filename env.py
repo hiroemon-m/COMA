@@ -44,47 +44,15 @@ class Env:
     #一つ進める
 
     def step(self,next_feature,next_action,time):
+
         reward = torch.empty([len(self.persona[0][0]),self.agent_num,self.agent_num])
-        #norm = next_feature.norm(dim=1)[:, None] + 1e-8
-        #next_feature = next_feature.div(norm)
         impact = 0
-        #if time>0:
-        #    persona_gamma = torch.mm(self.persona[time],self.gamma.view(self.persona[time].size()[1],1))
-        #    trend = (torch.sum( self.feature,dim=0)>0).repeat(500,1)
-        #    trend = torch.where(trend>0,1,0)
-        #    trend = (trend - next_feature)/self.feature.size()[1]
-        #    impact = (trend*persona_gamma.view(500,-1)).sum()
-
-        #元々    
-        #persona_gamma = torch.mm(self.persona[time],self.gamma.view(self.persona[time].size()[1],1))
-        #new_feature = torch.matmul(next_action,next_feature)
-        #old_feature = torch.matmul(self.edges, self.feature)
-        #impact = torch.sum(torch.abs(new_feature - old_feature)+1e-4,dim=1)           
-        #reward = reward +  impact.view(self.agent_num,1)*persona_gamma.view(self.agent_num,1)
-        #reward= reward + impact
-        #self.edges = next_action
-        #self.feature = next_feature
-        #norm = self.feature.norm(dim=1)[:, None] + 1e-8
-        #self.feature_norm = self.feature.div(norm)
-        #self.feature_t = self.feature_norm.t()
-        #dot_product = torch.mm(self.feature_norm, self.feature_t).to(device)
-        #sim = torch.mul(self.edges,dot_product).sum(1)
-        #persona_alpha = torch.mm(self.persona[time],self.alpha.view(self.persona[time].size()[1],1))
-        #sim_alpha = sim.view(self.agent_num,1)*(persona_alpha.view(self.agent_num,1))
-        #sim_add = torch.add(sim_alpha,0.001)
-        #persona_beta = torch.mm(self.persona[time],self.beta.view(self.persona[time].size()[1],1))
-        #costs = self.edges.sum(1).view(self.agent_num,1)*persona_beta.view(self.agent_num,1)
-        #costs_add = torch.add(costs, 0.001)
-        #reward = reward + torch.sub(sim_add, costs_add)
-
-        #self.persona[time] 32,5
-        #alpha 1,5
-
         #persona_alpha =5,32 -> 5,32,32
         persona_t = torch.transpose(self.persona[time],1,0)
-        persona_alpha = torch.unsqueeze(persona_t*self.alpha,dim=2).expand(len(self.persona[0][0]),self.agent_num,self.agent_num)
-        persona_beta = torch.unsqueeze(persona_t*self.beta,dim=2).expand(len(self.persona[0][0]),self.agent_num,self.agent_num)
-        persona_gamma = torch.unsqueeze(persona_t*self.gamma,dim=2).expand(len(self.persona[0][0]),self.agent_num,self.agent_num)
+        
+        persona_alpha = torch.unsqueeze(persona_t*self.alpha[time],dim=2).expand(len(self.persona[0][0]),self.agent_num,self.agent_num)
+        persona_beta = torch.unsqueeze(persona_t*self.beta[time],dim=2).expand(len(self.persona[0][0]),self.agent_num,self.agent_num)
+        persona_gamma = torch.unsqueeze(persona_t*self.gamma[time],dim=2).expand(len(self.persona[0][0]),self.agent_num,self.agent_num)
 
         # (persona_num,agent_num,agent_num)→agent_num
         new_feature = torch.matmul(next_action,next_feature)
@@ -114,15 +82,9 @@ class Env:
         # 報酬の平均と標準偏差を計算 (エピソードとステップごとに)
         #mean_reward = torch.mean(reward,dim=0,keepdim=True)
         #std_reward = torch.std(reward,dim=0, keepdim=True) + 1e-8  # ゼロ除算を防ぐために1e-8を加える
-        print("Ed",torch.sum(torch.isnan(self.edges)))
-        print("Ed",torch.sum(torch.isnan(self.feature)))
         # 報酬を正規化
         #reward = (reward - mean_reward) / std_reward
 
-        #print("Original Rewards: ", reward)
-        #print("Mean Reward: ", mean_reward)
-        #print("Standard Deviation of Rewards: ", std_reward)
-        #print("Normalized Rewards: ", normalized_rewards)
  
         return reward
     
@@ -139,7 +101,7 @@ class Env:
         #    impact = (trend*persona_gamma.view(500,-1)).sum()
 
     
-        persona_gamma = torch.mm(self.persona[time],self.gamma.view(self.persona[time].size()[1],1))
+        persona_gamma = torch.mm(self.persona[time],self.gamma[time].view(self.persona[time].size()[1],1))
         new_feature = torch.matmul(next_action,next_feature)
         old_feature = torch.matmul(self.edges, self.feature)
        
@@ -153,10 +115,10 @@ class Env:
         self.feature_t = self.feature_norm.t()
         dot_product = torch.mm(self.feature_norm, self.feature_t).to(device)
         sim = torch.mul(self.edges,dot_product).sum(1)
-        persona_alpha = torch.mm(self.persona[time],self.alpha.view(self.persona[time].size()[1],1))
+        persona_alpha = torch.mm(self.persona[time],self.alpha[time].view(self.persona[time].size()[1],1))
         sim_alpha = sim.view(self.agent_num,1)*(persona_alpha.view(self.agent_num,1))
         sim_add = torch.add(sim_alpha,0.001)
-        persona_beta = torch.mm(self.persona[time],self.beta.view(self.persona[time].size()[1],1))
+        persona_beta = torch.mm(self.persona[time],self.beta[time].view(self.persona[time].size()[1],1))
         costs = self.edges.sum(1).view(self.agent_num,1)*persona_beta.view(self.agent_num,1)
         costs_add = torch.add(costs, 0.001)
         reward = reward + torch.sub(sim_add, costs_add)

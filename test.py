@@ -122,9 +122,10 @@ class PPO:
                 #print("ra",ratio,ratio_clipped)
                 #print("ra",torch.sum(torch.isnan(ratio)),torch.sum(torch.isnan(ratio_clipped)))
                 #print("reward",torch.sum(reward_unclipped),torch.sum(reward_clipped))
-                print("new*reward",torch.sum(torch.isnan(torch.log(new_policy)*reward)))
-                print("new",torch.sum(torch.isnan(torch.log(new_policy))))
-                print("reward",torch.sum(torch.isnan(reward)))
+                #デバッグ
+                #print("new*reward",torch.sum(torch.isnan(torch.log(new_policy)*reward)))
+                #print("new",torch.sum(torch.isnan(torch.log(new_policy))))
+                #print("reward",torch.sum(torch.isnan(reward)))
                 loss = loss - torch.sum(torch.log(new_policy)*reward)
 
             loss.retain_grad()
@@ -223,33 +224,39 @@ def execute_data(persona_num,data_name):
     else:
         action_dim = 500
 
-
-    LEARNED_TIME = 4
+    LEARNED_POLICY_TIME = 4
+    LEARNED_TIME = 0
     GENERATE_TIME = 5
     TOTAL_TIME = 10
     story_count = 5
     load_data = init_real_data()
-    agent_num = len(load_data.adj[LEARNED_TIME])
-    input_size = len(load_data.feature[LEARNED_TIME][1])
+    agent_num = len(load_data.adj[LEARNED_POLICY_TIME])
+    input_size = len(load_data.feature[LEARNED_POLICY_TIME][1])
 
     path_n = "gamma/{}/".format(data_name)
-    path = path_n+"gamma{}.npy".format(int(persona_num))
-    persona_ration = np.load(path)
-    persona_ration = persona_ration.astype("float32")
+    persona_ration = []
+    for t in range(story_count):
+        path = path_n+"gamma{}_{}.npy".format(int(persona_num),t)
+        persona_ration.append(np.load(path).astype("float32"))
+ 
     #5,32,4
-    persona_ration = torch.from_numpy(np.tile(persona_ration,(story_count,1,1))).to(device)
+    persona_ration = torch.tensor(persona_ration).to(device)
+    print("size",persona_ration.size())
+    #persona_ration = torch.from_numpy(np.tile(persona_ration,(story_count,1,1))).to(device)
+    means = []
+    for t in range(story_count):
+        path = path_n+"means{}_{}.npy".format(int(persona_num),t)
+        means_value = np.load(path).astype("float32")
+        means.append(means_value)
 
-    path = path_n+"means{}.npy".format(int(persona_num))
-    means = np.load(path)
-    means = means.astype("float32")
-    means = torch.from_numpy(means).to(device)
+    means = torch.tensor(means).to(device)
+    print("means",means.size())
     #重み(固定値)
     
-    alpha = torch.tensor(means[:,0]).unsqueeze(1)
-    beta = torch.tensor(means[:,1]).unsqueeze(1)
-    gamma = torch.tensor(means[:,2]).unsqueeze(1)
+    alpha = torch.unsqueeze(torch.tensor(means[:,:,0]),dim=-1)
+    beta = torch.unsqueeze(torch.tensor(means[:,:,1]),dim=-1)
+    gamma = torch.unsqueeze(torch.tensor(means[:,:,2]),dim=-1)
 
-    print("means",means)
     print("alpha",alpha)
     print("beta",beta)
     print("gamma",gamma)
@@ -284,81 +291,33 @@ def execute_data(persona_num,data_name):
         
         print("----------episode:{}----------".format(episode))
 
-        # E-step
-        #mixture_ratio:混合比率
 
-        if episode == 0:
-            mixture_ratio = persona_ration
-       
-        else:
-            new_mixture_ratio = e_step(
-                agent_num=agent_num,
-                load_data=load_data,
-                T=T,
-                e=e,
-                r=r,
-                w=w,
-                persona=persona_ration,
-                step = story_count,
-                base_time=LEARNED_TIME,
-                temperature=temperature,
-                old_feature=old_feature
-                )
-     
-                      
-            # スムージングファクター
-            if episode <= 10:
-                clip_ration = 0.2
-                updated_prob_tensor = (1 - clip_ration) * mixture_ratio + clip_ration * new_mixture_ratio
-                mixture_ratio = updated_prob_tensor
-                del updated_prob_tensor
-                gc.collect()
-            else:
-                mixture_ratio = new_mixture_ratio
+        #mixture_ratio:混合比率    
+        mixture_ratio = persona_ration
 
-
-        #personaはじめは均等
-        
-                    #環境の設定
+        #環境の設定
         obs = Env(
             agent_num=agent_num,
-            edges=load_data.adj[LEARNED_TIME].clone(),
-            feature=load_data.feature[LEARNED_TIME].clone(),
+            edges=load_data.adj[LEARNED_POLICY_TIME].clone(),
+            feature=load_data.feature[LEARNED_POLICY_TIME].clone(),
             alpha=alpha,
             beta=beta,
             gamma=gamma,
             persona=mixture_ratio
         )
 
-        #else:
-        #    obs.reset(
-        #            load_data.adj[LEARNED_TIME].clone(),
-        #            load_data.feature[LEARNED_TIME].clone(),
-        #            persona=mixture_ratio
-        #            )
-            
-        
         agents = PPO(obs,agent_num, input_size, action_dim,lr, mu,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
         episode_reward = 0
-        print("persona_ration",mixture_ratio)
-
         past_feature = old_feature
         test_past_feature = old_feature
 
         for time in range(story_count):
-            #初めは,32,32
-            #2回目は、ペルソナ毎に遷移が違う
             edge,feature = obs.state()
             #いらんかもedge_action,feat_action
             #persona_edge persona_feat　用意してそれぞれの
             edge_prob,edge_action,feat_prob,feat_action,past_feature= agents.get_actions(edge,feature,time,past_feature)
          
-
-
-            #属性値を確率分布の出力と考えているので、ベルヌーイ分布で値予測
-            #ペルソナ毎のエッジとペルソナ毎の属性値を与えたい
             reward = obs.step(feat_action,edge_action,time)
-            #memoryはtrainで使う
             agents.memory.probs[time]=edge_prob.clone()
             agents.memory.edges[time] = edge.clone()
             agents.memory.features[time] = feature.clone()
@@ -368,7 +327,7 @@ def execute_data(persona_num,data_name):
             episode_reward = episode_reward + reward.clone().detach().sum()
             del edge,feature,edge_prob,edge_action,feat_action,reward
             gc.collect()
-      
+    
 
         episodes_reward.append(episode_reward)
         print("epsiode_rewaerd",episodes_reward[-1])
@@ -407,7 +366,18 @@ def execute_data(persona_num,data_name):
             del agents.memory,agents,obs
             gc.collect()
             show()
- 
+
+        obs = Env(
+            agent_num=agent_num,
+            edges=load_data.adj[LEARNED_TIME].clone(),
+            feature=load_data.feature[LEARNED_TIME].clone(),
+            alpha=alpha,
+            beta=beta,
+            gamma=gamma,
+            persona=mixture_ratio
+        )
+    agents = PPO(obs,agent_num, input_size, action_dim,lr, gamma,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
+
 
 
     calc_log = np.zeros((10, 5))
@@ -419,19 +389,19 @@ def execute_data(persona_num,data_name):
     print("パラメータ",T,e,r,w)
 
             
-    new_mixture_ratio = e_step(
-                agent_num=agent_num,
-                load_data=load_data,
-                T=T,
-                e=e,
-                r=r,
-                w=w,
-                persona=persona_ration,
-                step = story_count,
-                base_time=LEARNED_TIME,
-                temperature=temperature,
-                old_feature=old_feature
-            )
+    #new_mixture_ratio = e_step(
+    #            agent_num=agent_num,
+    #            load_data=load_data,
+    #            T=T,
+    #            e=e,
+    #            r=r,
+    #            w=w,
+    #            persona=persona_ration,
+    #            step = story_count,
+    #            base_time=LEARNED_TIME,
+    #            temperature=temperature,
+    #            old_feature=old_feature
+    #        )
 
                       
 
@@ -440,7 +410,7 @@ def execute_data(persona_num,data_name):
     # a = 0.1
     #print("nm",new_mixture_ratio)
     #updated_prob_tensor = (1 - a) * mixture_ratio + a * new_mixture_ratio
-    mixture_ratio = new_mixture_ratio
+    
     agents = PPO(obs,agent_num, input_size, action_dim,lr, gamma,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
 
 
@@ -476,7 +446,7 @@ def execute_data(persona_num,data_name):
             attr_test = np.concatenate([pos_attr], 0)
             attr_predict_probs = np.concatenate([pred_prob], 0)
             print("属性値の総数")
-        
+
             #print("pred feat sum",attr_predict_probs.reshape((500, -1)).sum(axis=1))
             #print("target edge sum",attr_test.reshape((500, -1)).sum(axis=1))s
             print("pred feat sum",torch.sum(feat_action))
@@ -574,7 +544,6 @@ def execute_data(persona_num,data_name):
             print("edge auc, t={}:".format(test_time), auc_calc)
             #print("edge nll, t={}:".format(t), error_edge.item())
             #print("-------")
-            print(T,e,r,w)
             calc_log[count][test_time] = auc_calc
             calc_nll_log[count][test_time] = error_edge.item()
             agents.memory.clear()

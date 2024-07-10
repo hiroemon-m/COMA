@@ -236,17 +236,10 @@ class Actor(nn.Module):
         attr_prob = feat_tanh
         #edges_prob =  torch.clamp(edges_prob + x ,min=0,max=1)
         
-        #属性の調整
-        
+        #属性の調整  
         attr_ber[:,:,:,0] = 10 - attr_prob*10
         attr_ber[:,:,:,1] = attr_prob*10
         attr_action= self.gumbel_softmax(attr_ber)[:,:,:,1]
-        #print("be",torch.sum(edges_prob.bernoulli()))
-        #print("edg",torch.sum(edges))
-      
-
-      
-        print("edge_prob",torch.sum(torch.isnan(edge_prob)))
         edge_ber[:,:,:,0] = 10 - edge_prob*10
         edge_ber[:,:,:,1] = edge_prob*10
 
@@ -307,16 +300,15 @@ class Actor(nn.Module):
 
 
         #属性の調整
-
         attr_ber[:,:,0] = 10 - attr_prob*10
         attr_ber[:,:,1] = attr_prob*10
         attr_action= self.gumbel_softmax(attr_ber)[:,:,1]
-
+        #エッジ
         edge_prob = probability*10
         edge_ber[:,:,0] = 10 - edge_prob
         edge_ber[:,:,1] = edge_prob
         edge_action= self.gumbel_softmax(edge_ber)[:,:,1]
-
+        #過去の属性値
         past_feature = 0.8*past_feature + attr_action
 
         return edge_action,probability,attr_prob,attr_action,past_feature
