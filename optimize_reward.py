@@ -37,62 +37,37 @@ class Optimizer:
         return
 
     def optimize(self, t: int):
-        impact = 0
+     
         feat = self.feats[t].to(device)
         edge = self.edges[t].to(device) 
         self.optimizer.zero_grad()
         norm = feat.norm(dim=1)[:, None] + 1e-8
         feat_norm = feat.div(norm)
         dot_product = torch.matmul(feat_norm, torch.t(feat_norm)).to(device)
-
         sim = torch.mul(edge, dot_product)
         sim = torch.mul(sim, self.model.alpha)
         sim = torch.add(sim, 0.001)
-
         costs = torch.mul(edge, self.model.beta)
         costs = torch.add(costs, 0.001)
-        reward = torch.sub(sim, costs)
-
-        #if t > 0:
-        #    trend = (torch.sum(self.feats[t-1],dim=0)>0).repeat(500,1)
-        #    trend = torch.where(trend>0,1,0)
-            #trend = torch.sum(self.feats[t-1],dim=0).repeat(500,1)
-        #    trend =  (trend - self.feats[t])/len(self.feats[0][0])
-            #trend =  (trend - self.feats[t])
-    
-
-        #    impact = (trend*self.model.gamma.view(500,-1)).sum()
-
-    
-                
+        reward = torch.sub(sim, costs)   
 
         if t > 0:
-            print(self.edges[t])
+        
             new_feature = torch.matmul(self.edges[t],self.feats[t])
-            #new_feature = torch.matmul(new_feature,torch.t(new_feature))
             old_feature = torch.matmul(self.edges[t-1], self.feats[t-1])
-            #old_feature = torch.matmul(old_feature,torch.t(old_feature))
-
             reward += torch.sum((
-                #self.model.gamma/torch.sqrt(torch.sum(torch.abs(new_feature - old_feature)**2))
-                torch.matmul(self.model.gamma.view(1,-1),(torch.abs(new_feature - old_feature)+1e-4)))
-                #self.model.gamma/(torch.sqrt(torch.abs(new_feature - old_feature)+1e-4)**2)
-
+                torch.matmul(self.model.gamma.view(1,-1),(torch.abs(new_feature - old_feature)+1e-4)))/len(new_feature[0])        
             )
-        #    print(torch.abs(new_feature - old_feature)+1e-4)
+        reward_clip=[-1,1]
+        reward = torch.clamp(reward,min=reward_clip[0],max=reward_clip[1])    
 
-  
+        print(reward.sum())
         loss = -reward.sum()
         loss.backward()
-        del loss
         self.optimizer.step()
 
-       
-
-
-    def export_param(self):
-        #gamma/NIPS/
-        with open("gamma/DBLP/model.param.data.fast", "w") as f:
+    def export_param(self,data):
+        with open("gamma/{}/optimized_param".format(data), "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
             max_gamma = 1.0
@@ -112,6 +87,7 @@ if __name__ == "__main__":
     # data = attr_graph_dynamic_spmat_DBLP(T=10)
     # data = TwitterData(T=10)
     # data = attr_graph_dynamic_spmat_twitter(T=10)
+    data_name = "NIPS"
     data = init_real_data()
     data_size = len(data.adj[0])
 
@@ -154,7 +130,9 @@ if __name__ == "__main__":
     #data.feature[4][i][:] = 0
 
     optimizer = Optimizer(data.adj, data.feature, model, data_size)
-
+    
     for t in range(5):
         optimizer.optimize(t)
-    optimizer.export_param()
+        print(model.alpha.grad)
+        print(model.beta.grad)
+    optimizer.export_param(data_name)

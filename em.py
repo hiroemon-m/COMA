@@ -1,10 +1,9 @@
 from numpy import linalg as LA
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from sklearn.cluster import KMeans
 import pandas as pd
-
-
+from pickle import dump
 
 
 
@@ -35,7 +34,7 @@ def calc_gaussian_prob(x, mean, sigma):
     """ サンプルxが多次元ガウス分布から生成される確率を計算 """
     x = np.matrix(x)
     mean = np.matrix(mean)
-    sigma = np.matrix(sigma) + np.eye(sigma.shape[0]) * 1e-5  # 数値安定性のための小さなノイズ
+    sigma = np.matrix(sigma) +  np.eye(sigma.shape[0]) * 1e-5  # 数値安定性のための小さなノイズ
     d = x - mean
     sigma_inv = np.linalg.inv(sigma)  # 逆行列の計算
     a = np.sqrt((2 * np.pi) ** sigma.ndim * np.linalg.det(sigma))
@@ -43,11 +42,10 @@ def calc_gaussian_prob(x, mean, sigma):
     return b / a
 
 
-def calc_likelihood(X, means, sigmas, pi,K):
+def calc_likelihood(N,X, means, sigmas, pi,K):
     """ データXの現在のパラメタにおける対数尤度を求める
     """
     likehood = 0.0
-    N = len(X)
     for n in range(N):
         temp = 0.0
         for k in range(K):
@@ -58,18 +56,21 @@ def calc_likelihood(X, means, sigmas, pi,K):
 
 def em_algorithm(N, K, X, means, sigmas):
     pi = init_mixing_param(K)
-    likelihood = calc_likelihood(X, means, sigmas, pi, K)
+    likelihood = calc_likelihood(N,X, means, sigmas, pi, K)
     gamma = np.zeros((N, K))
     is_converged = False
     iteration = 0
 
     while not is_converged:
         # E-Step
+        print("pu",pi)
         for n in range(N):
             denominator = sum(pi[k] * calc_gaussian_prob(X[n], means[k], sigmas[k]) for k in range(K))
+            
             for k in range(K):
+                
                 gamma[n, k] = pi[k] * calc_gaussian_prob(X[n], means[k], sigmas[k]) / denominator
-
+                
         # M-Step
         Nks = gamma.sum(axis=0)
         for k in range(K):
@@ -79,7 +80,7 @@ def em_algorithm(N, K, X, means, sigmas):
             pi[k] = Nks[k] / N
 
         # 収束判定
-        new_likelihood = calc_likelihood(X, means, sigmas, pi, K)
+        new_likelihood = calc_likelihood(N,X, means, sigmas, pi, K)
         if abs(new_likelihood - likelihood) < 0.01 or iteration >= 20:
             is_converged = True
         print(likelihood)
@@ -88,112 +89,130 @@ def em_algorithm(N, K, X, means, sigmas):
         iteration += 1
 
 
-    return gamma, means
+    return gamma, means,sigmas,pi
 
 
 
-def tolist(data) -> None:
+def tolist(data_path) -> None:
     np_alpha = []
     np_beta = []
     np_gamma = []
 
-    with open(data, "r") as f:
-        lines = f.readlines()
-        
-        #print(lines)
+    with open(data_path, "r") as f:
+        lines = f.readlines()      
         for index, line in enumerate(lines):
-            datas = line[:-1].split(",")
-            print(datas[2])
-            np_alpha.append(np.float32(datas[0]))
-            np_beta.append(np.float32(datas[1]))
-            np_gamma.append(np.float32(datas[2]))
+            load_datas = line[:-1].split(",")
+            np_alpha.append(np.float32(load_datas[0]))
+            np_beta.append(np.float32(load_datas[1]))
+            np_gamma.append(np.float32(load_datas[2]))
 
     return np_alpha,np_beta,np_gamma
 
 
+def em(data_name,persona_num):
+    #変数の設定
 
-if __name__ == "__main__": 
-    data_name = "NIPS"
-    path = "gamma/{}/model.param.data.fast".format(data_name)
+    #データの読み込み
+    path = "gamma/{}/optimized_param".format(data_name)
     dblp_alpha,dblp_beta,dblp_gamma = tolist(path)
+    print("d",dblp_alpha)
     data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta,"gamma":dblp_gamma})
+
+    #ペルソナの個数
+    num = persona_num
+    N = len(dblp_alpha)
     
-    transformer = MinMaxScaler()
-    norm = transformer.fit_transform(data_dblp)
+    #標準化
+    #transformer = MinMaxScaler()
+    sc = StandardScaler()
+    sc = sc.fit(data_dblp)
+    df_sc = sc.transform(data_dblp)
+    #平均正規化
+    df_mean = df_sc.mean() #各列の平均を返す
+    df_max = df_sc.max()
+    df_min = df_sc.min()
+    norm = (df_sc - df_mean)/(df_max - df_min)
+    print("norm",norm)
+    print("mean",sc.mean_)
+    print(sc.var_)
+
+
+
 
     data_norm = data_dblp.copy(deep=True)
+
     data_norm["alpha"] = norm[:,0]
     data_norm["beta"] = norm[:,1]
     data_norm["gamma"] = norm[:,2]
     
-    alpha,beta,gamma = tolist(path)
-    data = pd.DataFrame({"alpha":alpha,"beta":beta,"gamma":gamma})
-    dblp_array = np.array([data_norm["alpha"].tolist(),
-                      data_norm["beta"].tolist(),data_norm["gamma"].tolist()])
+    #k-mean(初期値として使用)
+    dblp_array = np.array([data_norm["alpha"].tolist(),data_norm["beta"].tolist(),data_norm["gamma"].tolist()])
     dblp_array = dblp_array.T
-    num = len(dblp_alpha)
-  
     pred = KMeans(n_clusters=num).fit_predict(dblp_array)
-    dblp_kmean = data_norm
+    dblp_kmean = data_norm.copy()
     dblp_kmean["cluster_id"] = pred
-    
-
-
+    data = data_dblp.copy()
     data = data.loc[:,["alpha","beta","gamma"]]
-    # (サンプル数, 特徴量の次元数) の2次元配列で表されるデータセットを作成する。
-    # 変換器を作成する。
-    transformer = MinMaxScaler()
-    # 変換する。
-    data.loc[:,["alpha","beta","gamma"]] = transformer.fit_transform(data)
 
-    em = 0
-    li = []
-    #for i in data["alpha"].tolist():
-    #    li.append([i])
-    #for k,j in enumerate(data["beta"].tolist()):
-    #    li[k].append(j)
+    data.loc[:,["alpha","beta","gamma"]] = norm
 
-    for i in range(len(data["alpha"].tolist())):
-        li.append([data["alpha"][i],data["beta"][i],data["gamma"][i]])
-
-
-    em = np.array(li)
+    param_time = []
     
-    alpha,beta,gamma = tolist(path)
-    data = pd.DataFrame({"alpha":alpha,"beta":beta,"gamma":gamma})
-    dblp_kmean = data_norm
-    dblp_kmean["cluster_id"] = pred
-    print(dblp_kmean["cluster_id"].value_counts())
+    for i in range(len(data["alpha"].tolist())):
+        param_time.append([data["alpha"][i],data["beta"][i],data["gamma"][i]])
 
+    em = np.array(param_time)
+
+    print("em",em)
     mean = [[]for i in range(num)]
     sigma = []
     for i in range(num):
-
         mean[i].append(dblp_kmean["alpha"][dblp_kmean["cluster_id"]==i].mean())
         mean[i].append(dblp_kmean["beta"][dblp_kmean["cluster_id"]==i].mean())
         mean[i].append(dblp_kmean["gamma"][dblp_kmean["cluster_id"]==i].mean())
-        sigma.append(np.cov(mean[i],bias=False))
-        #sigma.append(np.cov(dblp_kmean[dblp_kmean["cluster_id"]==i]["alpha"],dblp_kmean[dblp_kmean["cluster_id"]==i]["beta"],dblp_kmean[dblp_kmean["cluster_id"]==i]["gamma"],bias=True))
+
+        cluster_data = dblp_kmean[dblp_kmean["cluster_id"] == i][["alpha", "beta", "gamma"]]
+        if not cluster_data.empty:
+            # np.covは2次元データを期待するので、3次元データの場合は転置して与える
+            cov_matrix = np.cov(cluster_data.T, bias=True)
+            sigma.append(cov_matrix)
+   
+
 
     means = []
     for i in mean:
         means.append(np.array(i))
-    print("aaa")
-    print(dblp_kmean["cluster_id"])
-    print(mean)
-    print(sigma)
-    gamma,means = em_algorithm(len(alpha),num,em,means,sigma)
-    original_means = transformer.inverse_transform(means)
-    print(gamma)
-    print(np.argmax(gamma,axis=1))
-    print("orginal-mean",original_means)
+    gamma,means,sigmas,pi = em_algorithm(N,num,em,means,sigma)
+    #original_meansスケーリング前
+    #original_means = transformer.inverse_transform(means)
     np.argmax(gamma,axis=1)
     np.save(
-    "gamma/{}/gamma{}".format(data_name,num), # データを保存するファイル名
-    gamma,  # 配列型オブジェクト（listやnp.array)
+    "gamma/{0}/persona={1}/gamma{1}".format(data_name,num), 
+    gamma,  
     )
     np.save(
-    "gamma/{}/means{}".format(data_name,num), # データを保存するファイル名
-    original_means,  # 配列型オブジェクト（listやnp.array)
+    "gamma/{0}/persona={1}/means{1}".format(data_name,num),
+    means, 
     )
+    np.save(
+    "gamma/{0}/persona={1}/sigma{1}".format(data_name,num),
+    sigmas, 
+    )
+    np.save(
+    "gamma/{0}/persona={1}/pi{1}".format(data_name,num),
+    pi, 
+    )
+    dump(sc,open("gamma/{0}/persona={1}/norm".format(data_name,num),"wb"))
+
+
+
     
+    print("割り当て率の最大",np.argmax(gamma,axis=1))
+    print("gamma",gamma)
+    print("means",means)
+    #print("orginal-mean",original_means)
+
+if __name__ == "__main__":
+    data_name = "NIPS"
+    for num in [5]:
+        em(data_name,num)

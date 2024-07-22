@@ -11,10 +11,9 @@ class Memory:
         else:
             self.attr_num = 3854
         self.probs = torch.empty([self.story_count,persoma_num,self.agent_num,self.agent_num])
-        self.edges = torch.empty([self.story_count,persoma_num,self.agent_num,self.agent_num])
-        self.features = torch.empty([self.story_count,persoma_num,self.agent_num, self.attr_num])
-        self.next_edges = torch.empty([self.story_count,persoma_num,self.agent_num,self.agent_num])
-        self.next_features = torch.empty([self.story_count,persoma_num,self.agent_num, self.attr_num])
+        self.feat_probs = torch.empty([self.story_count,persoma_num,self.agent_num,self.attr_num])
+        self.next_edges = torch.empty([self.story_count + 1,persoma_num,self.agent_num,self.agent_num])
+        self.next_features = torch.empty([self.story_count + 1,persoma_num,self.agent_num, self.attr_num])
         #エージェントの数だけ行数がある
         self.pi = torch.empty([self.story_count,self.agent_num,self.agent_num])
         self.reward = torch.empty([self.story_count,persoma_num,agent_num,agent_num])
