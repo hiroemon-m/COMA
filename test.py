@@ -26,7 +26,7 @@ from actor import Actor
 device = config.select_device
 
 class PPO:
-    def __init__(self, obs,agent_num,input_size, action_dim, lr, gamma,T,e,r,w,rik,temperature,story_count,data_set):
+    def __init__(self, obs,agent_num,input_size, action_dim, lr, gamma,T,e,r,w,f,rik,temperature,story_count,data_set):
         self.agent_num = agent_num
         self.action_dim = action_dim
         self.input_size = input_size
@@ -40,8 +40,8 @@ class PPO:
         self.gamma = self.obs.beta
         self.ln = 0
         self.count = 0
-        self.actor = Actor(T,e,r,w,rik,self.agent_num,temperature)
-        self.new_actor = Actor(T,e,r,w,rik,self.agent_num,temperature)
+        self.actor = Actor(T,e,r,w,f,rik,self.agent_num,temperature)
+        self.new_actor = Actor(T,e,r,w,f,rik,self.agent_num,temperature)
         #adamにモデルを登録
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr) 
         self.new_actor_optimizer = torch.optim.Adam(self.new_actor.parameters(), lr=lr) 
@@ -155,17 +155,17 @@ class PPO:
             self.new_actor_optimizer.step()
             print("update",self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.W)
             
-        T,e,r,w = self.new_actor.T.clone().detach(),self.new_actor.e.clone().detach(),self.new_actor.r.clone().detach(),self.new_actor.W.clone().detach()
+        T,e,r,w,f = self.new_actor.T.clone().detach(),self.new_actor.e.clone().detach(),self.new_actor.r.clone().detach(),self.new_actor.W.clone().detach(),self.new_actor.f.clone().detach()
         del old_policy,new_policy,ratio,ratio_clipped,G,reward_unclipped,reward_clipped
         del reward, G_r, baseline, loss,self.new_actor, self.new_actor_optimizer, self.actor
         gc.collect()
         
-        return T,e,r,e
+        return T,e,r,e,f
     
 #@profile
-def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time,temperature,old_feature):
+def e_step(agent_num,load_data,T,e,r,w,f,persona,step,base_time,temperature,old_feature):
 
-    actor = Actor(T,e,r,w,persona,agent_num,temperature)
+    actor = Actor(T,e,r,w,f,persona,agent_num,temperature)
     past_feature = old_feature
 
     policy_prob = actor.calc_ration(
@@ -265,6 +265,7 @@ def execute_data(persona_num,data_name):
     e = torch.tensor([[[1.0]] for _ in range(persona_num)], dtype=torch.float32)
     r = torch.tensor([[[0.75]] for _ in range(persona_num)], dtype=torch.float32)
     w = torch.tensor([[[1.0]] for _ in range(persona_num)], dtype=torch.float32)
+    f = torch.tensor([[[1.0]] for _ in range(persona_num)], dtype=torch.float32)
   
     print("T.size",T.size())
     ln = 0
@@ -298,6 +299,7 @@ def execute_data(persona_num,data_name):
                 e=e,
                 r=r,
                 w=w,
+                f=f,
                 persona=persona_ration,
                 step = story_count,
                 base_time=LEARNED_TIME,
@@ -338,7 +340,7 @@ def execute_data(persona_num,data_name):
         #            )
             
         
-        agents = PPO(obs,agent_num, input_size, action_dim,lr, mu,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
+        agents = PPO(obs,agent_num, input_size, action_dim,lr, mu,T,e,r,w,f,mixture_ratio,temperature,story_count,data_name)
         episode_reward = 0
         print("persona_ration",mixture_ratio)
 
@@ -373,8 +375,8 @@ def execute_data(persona_num,data_name):
         episodes_reward.append(episode_reward)
         print("epsiode_rewaerd",episodes_reward[-1])
 
-        T,e,r,w= agents.train(load_data.adj[LEARNED_TIME].clone(),load_data.feature[LEARNED_TIME].clone(),mu,test_past_feature)
-        print("パラメータ",T,e,r,w)
+        T,e,r,w,f= agents.train(load_data.adj[LEARNED_TIME].clone(),load_data.feature[LEARNED_TIME].clone(),mu,test_past_feature)
+        print("パラメータ",T,e,r,w,f)
         del past_feature
         gc.collect()
   
@@ -426,6 +428,7 @@ def execute_data(persona_num,data_name):
                 e=e,
                 r=r,
                 w=w,
+                f=f,
                 persona=persona_ration,
                 step = story_count,
                 base_time=LEARNED_TIME,
@@ -441,7 +444,7 @@ def execute_data(persona_num,data_name):
     #print("nm",new_mixture_ratio)
     #updated_prob_tensor = (1 - a) * mixture_ratio + a * new_mixture_ratio
     mixture_ratio = new_mixture_ratio
-    agents = PPO(obs,agent_num, input_size, action_dim,lr, gamma,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
+    agents = PPO(obs,agent_num, input_size, action_dim,lr, gamma,T,e,r,w,f,mixture_ratio,temperature,story_count,data_name)
 
 
         
@@ -599,5 +602,5 @@ def execute_data(persona_num,data_name):
 if __name__ == "__main__":
     #[5,8,12,16,24,32,64,128]
     #[4,8,12,16]
-    for i in [5]:
+    for i in [3,5,8,12,16]:
         execute_data(i,"NIPS")

@@ -18,13 +18,14 @@ device = config.select_device
 
 class Actor(nn.Module):
 
-    def __init__(self, T, e, r, w,persona,agent_num,temperature) -> None:
+    def __init__(self, T, e, r, w,f,persona,agent_num,temperature) -> None:
 
         super().__init__()
         self.T = nn.Parameter(T.clone().detach().requires_grad_(True))
         self.e = nn.Parameter(e.clone().detach().requires_grad_(True))
         self.r = nn.Parameter(r.clone().detach().to(device).requires_grad_(True))
         self.W = nn.Parameter(w.clone().detach().to(device).requires_grad_(True))
+        self.f = nn.Parameter(w.clone().detach().to(device).requires_grad_(True))
         self.temperature = temperature
         self.persona = persona
         self.agent_num = agent_num
@@ -63,18 +64,20 @@ class Actor(nn.Module):
         edges_float = edges.float()
         edge_index = edges_float > 0
         edges =edge_index.float()
+     
+        trend = (torch.sum(attributes,dim=0)>0).repeat(self.agent_num,1)
 
         for i in range(len(persona[0][0])):
             past_feature_t = past_feature
             for t in range(5):
 
-                trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
+                
                 #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
                 #trend = torch.where(trend>0,1,0)
                 feat_prob = torch.empty(len(attributes),len(attributes[0]),2)
-                #tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
+                tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend*self.f[i]
 
-                tmp_tensor = self.W[i] * torch.matmul(edges, attributes)
+                #tmp_tensor = self.W[i] * torch.matmul(edges, attributes)
                 r = self.r[i]
                 feat = r * attributes + tmp_tensor * (1-r)
                 #feat = r * past_feature_t + tmp_tensor * (1-r)
@@ -121,13 +124,13 @@ class Actor(nn.Module):
         attr_prob = torch.empty(len(self.persona[0][0]),len(attributes[0]),len(attributes[0][0])) 
             
         
-        trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
+        trend = (torch.sum(attributes,dim=1,keepdim=True)>0).repeat(1,self.agent_num,1)
             #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
             #trend = torch.where(trend>0,1,0)
 
         feat_prob = torch.empty(len(self.persona[0][0]),len(attributes[0]),len(attributes[0][0]),2)
-        #tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
-        tmp_tensor = self.W * torch.matmul(edges, attributes)
+        tmp_tensor = self.W * torch.matmul(edges, attributes) + trend*self.f
+        #tmp_tensor = self.W * torch.matmul(edges, attributes)
         r = self.r
 
         feat = r * attributes + tmp_tensor * (1-r)
@@ -188,15 +191,15 @@ class Actor(nn.Module):
             
         
         #iはペルソナ
-        trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
+        trend = (torch.sum(attributes,dim=1,keepdim=True)>0).repeat(1,self.agent_num,1)
         #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
         #trend = torch.where(trend>0,1,0)
 
         feat_prob = torch.empty(len(self.persona[0][0]),len(attributes[0]),len(attributes[0][0]),2)
-        #tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
+        tmp_tensor = self.W * torch.matmul(edges, attributes) + trend*self.f
         # torch.matmul(edges, attributes):4x32x3000
         #r,w:4,1,1
-        tmp_tensor = self.W * torch.matmul(edges, attributes)
+        #tmp_tensor = self.W * torch.matmul(edges, attributes)
 
         r = self.r
         #4,32,3000
@@ -266,23 +269,24 @@ class Actor(nn.Module):
         attr_ber = torch.empty(len(attributes),len(attributes[0]),2)
         edge_ber = torch.empty(len(edges),len(edges[0]),2)
 
-            
+        print(attributes.size())
         for i in range(len(self.persona[0][0])):
-            trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
+            trend = (torch.sum(attributes,dim=0)>0).repeat(self.agent_num,1)
             #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
             #trend = torch.where(trend>0,1,0)
   
 
             feat_prob = torch.empty(len(attributes),len(attributes[0]),2)
     
-            #tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend
-            tmp_tensor = self.W[i] * torch.matmul(edges, attributes) 
+            tmp_tensor = self.W[i] * torch.matmul(edges, attributes) + trend*self.f[i]
+            #tmp_tensor = self.W[i] * torch.matmul(edges, attributes) 
             #torch.matmul(1-edges, attributes)
             r = self.r[i]
             feat = r * attributes + tmp_tensor * (1-r)
             #feat = r * past_feature + tmp_tensor * (1-r)
 
             feat_tanh = torch.tanh(feat)
+            print(feat_tanh.size())
            
             feat_prob[:,:,0] = 10 - (feat_tanh*10)
             feat_prob[:,:,1] = feat_tanh*10
