@@ -29,7 +29,7 @@ from reward_policy import Model,Optimizer
 device = config.select_device
 
 class PPO:
-    def __init__(self, obs,agent_num,input_size, action_dim, lr,discount ,T,e,r,w,rik,temperature,story_count,data_set):
+    def __init__(self, obs,agent_num,input_size, action_dim, lr,discount ,T,e,r,w,f,rik,temperature,story_count,data_set):
         self.agent_num = agent_num
         self.action_dim = action_dim
         self.input_size = input_size
@@ -43,8 +43,8 @@ class PPO:
         self.gamma = self.obs.gamma
         self.ln = 0
         self.count = 0
-        self.actor = Actor(T,e,r,w,rik,self.agent_num,temperature)
-        self.new_actor = Actor(T,e,r,w,rik,self.agent_num,temperature)
+        self.actor = Actor(T,e,r,w,f,rik,self.agent_num,temperature)
+        self.new_actor = Actor(T,e,r,w,f,rik,self.agent_num,temperature)
         #adamにモデルを登録
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr) 
         self.new_actor_optimizer = torch.optim.Adam(self.new_actor.parameters(), lr=lr) 
@@ -128,12 +128,12 @@ class PPO:
 
             self.new_actor_optimizer.step()
             
-        T,e,r,w = self.new_actor.T.clone().detach(),self.new_actor.e.clone().detach(),self.new_actor.r.clone().detach(),self.new_actor.W.clone().detach()
+        T,e,r,w ,f= self.new_actor.T.clone().detach(),self.new_actor.e.clone().detach(),self.new_actor.r.clone().detach(),self.new_actor.W.clone().detach(),self.new_actor.f.clone().detach()
         del old_policy,new_policy,ratio,ratio_clipped,G,reward_unclipped,reward_clipped
         del reward, G_r, baseline, loss,self.new_actor, self.new_actor_optimizer, self.actor
         gc.collect()
         
-        return T,e,r,w
+        return T,e,r,w,f
     
    
 
@@ -225,11 +225,17 @@ def update_reward(agent,persona_ration,sc_mean,sc_var,optim_alpha,optim_beta,opt
     reward_optimizer = Optimizer(agent.memory,persona_ration,reward_model)
     reward_optimizer.optimize(time)
    
-    print("mae",alpha,beta,gamma)
 
-    print("grad",reward_model.alpha.grad,reward_model.beta.grad)
-
+    
+    #SGD
     update_alpha,update_beta,update_gamma = reward_model.alpha ,reward_model.beta,reward_model.gamma
+
+    #GD
+    #if time == 0:
+    #    reward_model.gamma.grad = torch.zeros([32])
+    #print("grad",reward_model.alpha.grad,reward_model.beta.grad,reward_model.gamma.grad)
+    #lr = 0.005
+    #update_alpha,update_beta,update_gamma = alpha - reward_model.alpha.grad*lr , beta - reward_model.beta.grad*lr, gamma - reward_model.gamma.grad*lr
 
 
     #更新したパラメータの標準化
@@ -244,8 +250,7 @@ def update_reward(agent,persona_ration,sc_mean,sc_var,optim_alpha,optim_beta,opt
         gamma_li.append(update_gamma[i].tolist())
 
     df =  pd.DataFrame({"alpha":alpha_li,"beta":beta_li,"gamma":gamma_li})
-    #dff =  pd.DataFrame({"alpha":optim_alpha,"beta":optim_beta,"gamma":optim_gamma})
-    #d = pd.concat([df,dff])
+
     #print("df前",df)
 
     #更新前データの平均、分散
@@ -267,14 +272,22 @@ def update_reward(agent,persona_ration,sc_mean,sc_var,optim_alpha,optim_beta,opt
     new_mean = new_mean.cpu().detach().numpy().copy()
     new_var = new_var.cpu().detach().numpy().copy()
     #標準化
-    X_new_scaled = (df - new_mean) / np.sqrt(new_var)
+    #X_new_scaled = (df - new_mean) / np.sqrt(new_var)
+    #標準化
+    sc = StandardScaler()
+    X_new_scaled = sc.fit_transform(df)
 
     #print("df後", X_new_scaled)
-    update_alpha =  X_new_scaled["alpha"]
-    update_beta =  X_new_scaled["beta"]
-    update_gamma =  X_new_scaled["gamma"]
+    #元データで標準化
+    #update_alpha =  X_new_scaled["alpha"]
+    #update_beta =  X_new_scaled["beta"]
+    #update_gamma =  X_new_scaled["gamma"]
+    #sc
+    update_alpha =  X_new_scaled[:,0]
+    update_beta =  X_new_scaled[:,1]
+    update_gamma =  X_new_scaled[:,2]
     reward_param = []
-    print("更新後",X_new_scaled)
+    #print("更新後",X_new_scaled)
 
     for i in range(agent.agent_num):
         reward_param.append([update_alpha[i]
@@ -365,6 +378,7 @@ def execute_data(persona_num,data_name):
     e = torch.tensor([[[1.0]] for _ in range(persona_num)], dtype=torch.float32)
     r = torch.tensor([[[0.7]] for _ in range(persona_num)], dtype=torch.float32)
     w = torch.tensor([[[1.0]] for _ in range(persona_num)], dtype=torch.float32)
+    f = torch.tensor([[[1.0]] for _ in range(persona_num)], dtype=torch.float32)
   
     #初期化
     flag = True
@@ -372,7 +386,7 @@ def execute_data(persona_num,data_name):
     episodes_reward = []
     old_feature = torch.empty(agent_num,input_size,requires_grad=False)
     for i in range(5):
-        old_feature  = 0.8*old_feature + load_data.feature[i]
+        old_feature  = 0.5*old_feature + load_data.feature[i]
 
     print("sum",torch.sum(load_data.adj[LEARNED_TIME],dim=-1))
     print("sum",torch.sum(load_data.feature[LEARNED_TIME],dim=-1))
@@ -387,7 +401,7 @@ def execute_data(persona_num,data_name):
 
         # E-step 
         #初期値はt=0~4のデータを元に設定
-        if episode < 1:
+        if episode < 10:
             mixture_ratio = persona_ration
 
        #t=5~10の生成されたネットワークを元に割り当て率の変更
@@ -417,7 +431,7 @@ def execute_data(persona_num,data_name):
         )
      
         
-        agents = PPO(obs,agent_num, input_size, action_dim,lr, mu,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
+        agents = PPO(obs,agent_num, input_size, action_dim,lr, mu,T,e,r,w,f,mixture_ratio,temperature,story_count,data_name)
         episode_reward = 0
       
 
@@ -449,8 +463,8 @@ def execute_data(persona_num,data_name):
         episodes_reward.append(episode_reward)
         print("epsiode_rewaerd",episodes_reward[-1])
 
-        T,e,r,w= agents.train(load_data.adj[LEARNED_TIME].clone(),load_data.feature[LEARNED_TIME].clone(),mu,test_past_feature)
-        print("パラメータ",T,e,r,w)
+        T,e,r,w,f= agents.train(load_data.adj[LEARNED_TIME].clone(),load_data.feature[LEARNED_TIME].clone(),mu,test_past_feature)
+        print("パラメータ",T,e,r,w,f)
         del past_feature,obs
         gc.collect()
         episode += 1
@@ -476,9 +490,10 @@ def execute_data(persona_num,data_name):
     attr_calc_nll_log = np.zeros((10, 5))
 
     print("学習終了")
-    print("パラメータ",T,e,r,w)
+    print("パラメータ",T,e,r,w,f)
+    optim_alpha,optim_beta,optim_gamma = tolist(path)
     for t in range(5):
-        reward_param =update_reward(agents,persona_ration,norm,t)
+        reward_param,optim_alpha,optim_beta,optim_gamma =update_reward(agents,persona_ration,sc_mean,sc_var,optim_alpha,optim_beta,optim_gamma,time)
         ration = e_step(agents.agent_num,persona_num,reward_param,sigma,means,pi).astype("float32")
         print("rrrrrrrrra",ration)
         persona_ration[t] = torch.from_numpy(ration)
@@ -495,7 +510,7 @@ def execute_data(persona_num,data_name):
         persona=mixture_ratio
         )
     
-    agents = PPO(obs,agent_num, input_size, action_dim,lr, gamma,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
+    agents = PPO(obs,agent_num, input_size, action_dim,lr, gamma,T,e,r,w,f,mixture_ratio,temperature,story_count,data_name)
 
         
     for count in range(10):
@@ -598,7 +613,6 @@ def execute_data(persona_num,data_name):
             print("edge auc, t={}:".format(test_time), auc_calc)
             #print("edge nll, t={}:".format(t), error_edge.item())
             #print("-------")
-            print(T,e,r,w)
             calc_log[count][test_time] = auc_calc
             calc_nll_log[count][test_time] = error_edge.item()
             agents.memory.clear()

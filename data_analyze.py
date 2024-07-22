@@ -27,25 +27,26 @@ for time in range(TOTAL_TIME):
         print("一つ前の時刻と同じ属性値")
         sa = (attr>0.0)&(attr_before>0.0)
         print(torch.sum(sa,dim=1))
+
+
         old = 0
         for k in range(5):
-            print(k)
             old = 0.74*old + load_data.feature[time-k]
-        print("kako",torch.sum((old>0)&(attr>0)))
-        print("kakoと違う",torch.sum(torch.where((torch.where(old>0,1,0)) - (torch.where(attr>0,1,0))>0,1,0)))
+        print("kako",torch.sum((old>0)&(attr>0),dim=1))
+        print("kakoと違う",torch.sum(torch.where((torch.where(old>0,1,0)) - (torch.where(attr>0,1,0))>0,1,0),dim=1))
         
-
-  
-        #print("一つ前の時刻から０属性値")
-        #print(torch.sum(torch.where((torch.where(attr_before>0.0,1.0,0.0)-torch.where(attr>0.0,1.0,0.0))>0.0,1.0,0.0),dim=1))
+        print("一つ前の時刻から０属性値")
+        print(torch.sum(torch.where((torch.where(attr_before>0.0,1.0,0.0)-torch.where(attr>0.0,1.0,0.0))>0.0,1.0,0.0),dim=1))
         print("一つ前の時刻の隣接ノード同じ属性値")
         adj = torch.matmul(edge_before,attr_before)
-        print(torch.max(torch.sum(edge,dim=1)))
-        print(torch.max(adj))
-        print(torch.max(attr))
-        print(torch.max(attr[0]))
+        #print(torch.max(torch.sum(edge,dim=1)))
+        #print(torch.max(adj))
+        #print(torch.max(attr))
+        #print(torch.max(attr[0]))
         aa = (adj>0.0)&(attr>0.0)
         print(torch.sum(aa,dim=1))
+        print("一つ前or一つ前の隣接")
+        print(torch.sum((sa)&(aa),dim=1))
         #print("一つ前の時刻の隣接でないノード同じ属性値")
         un_adj = torch.matmul(1-edge_before,attr_before)
         #print(torch.sum((un_adj>0.0)&(attr>0.0),dim=1))

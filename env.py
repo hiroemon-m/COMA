@@ -44,8 +44,8 @@ class Env:
     #一つ進める
 
     def step(self,next_feature,next_action,time):
-        print("feat",torch.sum(next_feature,dim=-1))
-        print("edge",torch.sum(next_action,dim=-1))
+        #print("feat",torch.sum(next_feature,dim=-1))
+        #print("edge",torch.sum(next_action,dim=-1))
         reward = torch.empty([len(self.persona[0][0]),self.agent_num,self.agent_num])
         impact = 0
 

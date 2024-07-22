@@ -33,7 +33,7 @@ class Optimizer:
         self.old_feats = memory.next_features
         self.persona = persona
         self.model = model
-        self.optimizer = optim.SGD(self.model.parameters(), lr=0.005)
+        self.optimizer = optim.SGD(self.model.parameters(), lr=0.001)
 
     
     def sample_gumbel(self,shape, eps=1e-20):
@@ -121,4 +121,6 @@ class Optimizer:
         loss = -reward.sum()
         loss.backward(retain_graph=True)
         self.optimizer.step()
+
+
 

@@ -128,11 +128,11 @@ def em(data_name,persona_num):
     sc = sc.fit(data_dblp)
     df_sc = sc.transform(data_dblp)
     #平均正規化
-    df_mean = df_sc.mean() #各列の平均を返す
-    df_max = df_sc.max()
-    df_min = df_sc.min()
-    norm = (df_sc - df_mean)/(df_max - df_min)
-    print("norm",norm)
+    #df_mean = df_sc.mean() #各列の平均を返す
+    #df_max = df_sc.max()
+    #df_min = df_sc.min()
+    #norm = (df_sc - df_mean)/(df_max - df_min)
+    norm = df_sc
     print("mean",sc.mean_)
     print(sc.var_)
 
@@ -214,5 +214,5 @@ def em(data_name,persona_num):
 
 if __name__ == "__main__":
     data_name = "NIPS"
-    for num in [5]:
+    for num in [5,8,12,16]:
         em(data_name,num)
