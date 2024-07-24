@@ -42,8 +42,7 @@ def init_real_data() -> LoadDataset:
         _ = spmat2sptensor(feature_)
         feature[t] = _
 
-    for l in range(5):
-        adj[l] = torch.tensor(torch.tensor(adj[l]) - torch.eye(500))
+    
 
     return LoadDataset(
         adj=adj,

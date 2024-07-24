@@ -202,7 +202,7 @@ def show():
     print("dell")
 
 #@profile
-def execute_data(persona_num,data_name):
+def execute_data(persona_num,data_name,data_type):
     ##デバッグ用
     torch.autograd.set_detect_anomaly(True)
     #alpha,betaの読み込み
@@ -220,14 +220,14 @@ def execute_data(persona_num,data_name):
     agent_num = len(load_data.adj[LEARNED_TIME])
     input_size = len(load_data.feature[LEARNED_TIME][1])
 
-    path_n = "gamma/{}/".format(data_name)
-    path = path_n+"gamma{}.npy".format(int(persona_num))
+    path_n = "param/{}/{}".format(data_name,data_type)
+    path = path_n+"persona={}/gamma.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
     #5,32,4
     persona_ration = torch.from_numpy(np.tile(persona_ration,(story_count,1,1))).to(device)
 
-    path = path_n+"means{}.npy".format(int(persona_num))
+    path = path_n+"persona={}/means.npy".format(int(persona_num))
     means = np.load(path)
     means = means.astype("float32")
     means = torch.from_numpy(means).to(device)
@@ -461,16 +461,8 @@ def execute_data(persona_num,data_name):
                     torch.from_numpy(attr_test),
                 )
                
-                precision, recall, _ = precision_recall_curve(attr_test, attr_predict_probs)
-                plt.figure()
-                plt.plot(precision, recall, marker='o')
-    
-                plt.xlabel('FPR: False positive rate')
-                plt.ylabel('TPR: True positive rate')
-
-                plt.grid()
-                plt.savefig('persona={}sklearn_pr_curve.png'.format(persona_num))
-                pr_auc = auc(recall, precision)
+               
+              
                 auc_actv = roc_auc_score(attr_test, attr_predict_probs)
  
                 fpr_a ,tpr_a, thresholds = roc_curve(1-attr_test, 1-attr_predict_probs)
@@ -481,8 +473,8 @@ def execute_data(persona_num,data_name):
                 plt.ylabel('TPR: True positive rate')
 
                 plt.grid()
-                plt.savefig('persona={}sklearn_roc_curve.png'.format(persona_num))
-               
+                plt.savefig('experiment_data/{}/{}/persona={}/sklearn_roc_curve.png'.format(data_name,data_type,persona_num))
+            
             finally:
                 print("attr auc, t={}:".format(test_time), auc_actv)
                 #print("attr auc, t={}:".format(test_time), pr_auc)
@@ -534,7 +526,7 @@ def execute_data(persona_num,data_name):
             plt.xlabel('FPR: False positive rate')
             plt.ylabel('TPR: True positive rate')
             plt.grid()
-            plt.savefig('perosna={}edge_sklearn_roc_curve.png'.format(persona_num))
+            plt.savefig('experiment_data/{}/{}/persona={}/edge_sklearn_roc_curve.png'.format(data_name,data_type,persona_num))
             #print("-------")
             print("edge auc, t={}:".format(test_time), auc_calc)
             #print("edge nll, t={}:".format(t), error_edge.item())
@@ -546,14 +538,14 @@ def execute_data(persona_num,data_name):
 
     
 
-    np.save("experiment_data/{}/param/persona={}/proposed_edge_auc".format(data_name,persona_num), calc_log)
-    np.save("experiment_data/{}/param/persona={}/proposed_edge_nll".format(data_name,persona_num), calc_nll_log)
-    np.save("experiment_data/{}/param/persona={}/proposed_attr_auc".format(data_name,persona_num), attr_calc_log)
-    np.save("experiment_data/{}/param/persona={}/proposed_attr_nll".format(data_name,persona_num), attr_calc_nll_log)
+    np.save("experiment_data/{}/{}/persona={}/proposed_edge_auc".format(data_name,data_type,persona_num), calc_log)
+    np.save("experiment_data/{}/{}/persona={}/proposed_edge_nll".format(data_name,data_type,persona_num), calc_nll_log)
+    np.save("experiment_data/{}/{}/persona={}/proposed_attr_auc".format(data_name,data_type,persona_num), attr_calc_log)
+    np.save("experiment_data/{}/{}/persona={}/proposed_attr_nll".format(data_name,data_type,persona_num), attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
     print(mixture_ratio)
-    np.save("experiment_data/{}/param/persona={}/persona_ration".format(data_name,persona_num),np.concatenate([mixture_ratio.detach().numpy()],axis=0))
-    np.save("experiment_data/{}/param/persona={}/paramerter".format(data_name,persona_num),np.concatenate([T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()],axis=0))
+    np.save("experiment_data/{}/{}/persona={}/persona_ration".format(data_name,persona_num),np.concatenate([mixture_ratio.detach().numpy()],axis=0))
+    np.save("experiment_data/{}/{}/persona={}/paramerter".format(data_name,persona_num),np.concatenate([T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()],axis=0))
 
 
   
@@ -564,5 +556,5 @@ def execute_data(persona_num,data_name):
 if __name__ == "__main__":
     #[5,8,12,16,24,32,64,128]
     #[4,8,12,16]
-    for i in [5]:
-        execute_data(i,"DBLP")
+    for i in [3,5,8,12,16]:
+        execute_data(i,"NIPS","imcomplete")

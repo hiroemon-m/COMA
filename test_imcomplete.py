@@ -2,13 +2,15 @@
 import gc
 
 # Third Party Library
+from memory_profiler import profile
 import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
-
-
-
+import tensorflow as tf
+from sklearn.metrics import roc_curve
+from sklearn.metrics import precision_recall_curve, auc
+import matplotlib.pyplot as plt
 
 # First Party Library
 import csv
@@ -19,386 +21,292 @@ from init_real_data import init_real_data
 #another file
 from memory import Memory
 from actor import Actor
-from critic import Critic
-from beforecritic import CriticBefore
+
 
 device = config.select_device
 
-class COMA:
-    def __init__(self, obs,agent_num,input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,rik,story_count):
+class PPO:
+    def __init__(self, obs,agent_num,input_size, action_dim, lr, gamma,T,e,r,w,rik,temperature,story_count,data_set):
         self.agent_num = agent_num
         self.action_dim = action_dim
-        self.input_size = 81580
+        self.input_size = input_size
         self.gamma = gamma
         self.persona = rik
-        self.target_update_steps = target_update_steps
         self.story_count = story_count 
-        self.memory = Memory(agent_num, action_dim,self.story_count)
-        #self.actor = [Actor(T[i],e[i],r[i],w[i],rik[i]) for i in range(len(alpha))]
+        self.memory = Memory(agent_num, action_dim,self.story_count,data_set)
         self.obs = obs
-        self.actor = Actor(T,e,r,w,rik)
-        num_features = self.obs.feature.size()[1]
-        #t-1での単位行列のサイズ
-        before_features = self.obs.edges.size()[1]
-        print(before_features)
-        self.critic = Critic(num_features, num_features//10, 1)
-        self.critic_before = CriticBefore(before_features,before_features//10, 1)
-
         self.alpha = self.obs.alpha
         self.beta = self.obs.beta
-        #crit
-
-        self.critic_target = Critic(num_features,  num_features//10, 1)
-        self.critic_target_before = CriticBefore(before_features, before_features//10, 1)
-        #critic.targetをcritic.state_dictから読み込む
-        self.critic_target.load_state_dict(self.critic.state_dict())
-        params = [self.obs.alpha,self.obs.beta]
-        #adamにモデルを登録
-        #self.actors_optimizer = [torch.optim.Adam(self.actor.parameters(), lr=lr_a) for i in range(agent_num)]
-        self.actors_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_a) 
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=0.01, weight_decay=5e-4)
-        self.critic_before_optimizer = torch.optim.Adam(self.critic_before.parameters(), lr=0.01, weight_decay=5e-4)
+        self.gamma = self.obs.beta
         self.ln = 0
-
         self.count = 0
+        self.actor = Actor(T,e,r,w,rik,self.agent_num,temperature)
+        self.new_actor = Actor(T,e,r,w,rik,self.agent_num,temperature)
+        #adamにモデルを登録
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr) 
+        self.new_actor_optimizer = torch.optim.Adam(self.new_actor.parameters(), lr=lr) 
 
-
-    def get_actions(self,time, edges,feat):
-  
-        prob,feat,_= self.actor.predict(feat,edges)
+    #@profile
+    def get_actions(self, edges,feat,time):
+        """ 行動確率と属性値を計算する
+        Input:エッジ,属性値
+        Output:
+            prob エッジ方策確率
+            feat 属性値
+        """
+        prob,edge,feat = self.actor.predict(feat,edges,time)
+        return prob,edge,feat
     
-        #print("prob",prob.shape)
-        for i in range(self.agent_num): 
-            self.memory.pi[time][i]=prob[i]
-            #print(prob[i])
+    
+
+    #@profile
+    def train(self,gamma):
+        """ 訓練用の関数
+        Input:割引率
+        Output:
             
-    
-        action = prob.bernoulli()
-        #observation,actionの配列に追加　actions,observationsは要素がエージェントの個数ある配列
-        self.memory.observation_edges[time]=edges
-        self.memory.observation_features[time]=feat
-        self.memory.actions[time]=action
-
-        return feat,action
-    
-    def create_edge_features(self,node_features, edge_index):
-    # エッジのノード特徴を取得
-        tensor_edge_features = torch.zeros(self.agent_num,self.agent_num)
-        for i in range(self.agent_num):
-            #反証行動の中から特定のagentに関する接続情報を取得
-            agent_edge_index = (edge_index==i).nonzero(as_tuple=False).t().contiguous()
-            #print(edge_index[0][edge_index[0]==i])
-            #print(edge_index[1][edge_index[0]==i])
-            #一つ目のtenosr 0は元のtenosr1行目(to) 1は2行目(go) 行番号
-            #2つ目のtenosr 列番号
-            #node_featuresは３２なのでedge_indexでリンク元リンク先の特徴をとる
-            #edge_indexは0起点で相手がわかるので
-            #print(edge_index[0][edge_index[0]==i])
-
-            #edge_features = node_features[agent_edge_index[0][agent_edge_index[0]==0]] + node_features[edge_index[1][edge_index[0]==i]]
-            edge_features = node_features[edge_index[0][edge_index[0]==i]] + node_features[edge_index[1][edge_index[0]==i]]
-            #edge_features = torch.cat((agent_edge_index[0][agent_edge_index[0]==0].view(-1,1),edge_index[1][edge_index[0]==i].view(-1,1),edge_features),dim=1)
-            #これでも良いがPiが32,20,32とかいう訳のわからん形状
-            ########
-            #tensor_edge_features = torch.zeros(32,32)
-            #tensor_edge_features.index_put_((agent_edge_index[0][agent_edge_index[0]==0],edge_index[1][edge_index[0]==i]),edge_features.view(1,-1).squeeze())
-            ########
-            
-            input_edge_feature = edge_features.detach().clone().view(1,-1).squeeze()
-            tensor_edge_features[i][edge_index[1][edge_index[0]==i]]= input_edge_feature
-
-        return tensor_edge_features
-    
-    def create_taken_edge_features(self,node_features, edge_index):
-    # エッジのノード特徴を取得
-     
-        #agent_edge_index = (edge_index==i).nonzero(as_tuple=False).t().contiguous()
-        tensor_edge_features_taken = torch.zeros(self.agent_num,self.agent_num)
-        for i in range(self.agent_num):
+        """
         
-            edge_features_taken = node_features[edge_index[0][edge_index[0]==i]] + node_features[edge_index[1][edge_index[0]==i]]
-            #print(edge_features_taken)
-
-            input_edge_feature_taken = edge_features_taken.detach().clone().view(1,-1).squeeze()
-            tensor_edge_features_taken[i][edge_index[1][edge_index[0]==i]]= input_edge_feature_taken
-            #print(tensor_edge_features_taken)
-
-        return tensor_edge_features_taken
-
+        cliprange=0.2
+        storycount = self.story_count
+        lnpxz = self.memory.probs.view(-1).sum()
     
-    def train(self):
-        actor_optimizer = self.actors_optimizer
-        critic_optimizer = self.critic_optimizer
-        critic_before_optimizer = self.critic_before_optimizer
-        actions, observation_edges,observation_features, pi, reward= self.memory.get()
+        G_r = torch.empty([storycount, self.agent_num, self.agent_num])
+   
+        #self.memory 10x32x1
+        #収益の計算
+        baseline = torch.empty([storycount, self.agent_num, 1])
 
-        lnpxz = pi.view(-1).sum()
-        #print("ln",lnpxz)
-        self.ln = lnpxz
-       
-        actor_loss = 0
-        critic_loss = 0
-        
-        self.critic_target.train() 
-        self.critic.train() 
-        #Q値を保管するリスト 
-        #このtensorには実際に行っていない行動に対しての評価値が欲しい
-        #つまり,エッジの回帰？
-        real_Q_target = torch.empty(self.story_count,self.agent_num,self.agent_num)
-        real_Q_taken = torch.empty(self.story_count,self.agent_num,self.agent_num)
+        for r in range(len(self.memory.reward)-1, -1, -1):
 
-        #print("エッジ",(observation_edges[0]==0).nonzero(as_tuple=False).t().contiguous()[0])
-  
-            
-        for t in range(self.story_count):
-                #反証行動
-                #反証行動のみ,[32,32]要素0から置き換える
-                #critic_targetは,エッジ生成の評価値が欲しい
-            input_critic = (observation_edges[t]==1).nonzero(as_tuple=False).t().contiguous()
-            input_crtic_target = (observation_edges[t]==0).nonzero(as_tuple=False).t().contiguous()
-            Q = self.critic(input_critic,observation_features[t])
-            Q_target = self.critic_target(input_crtic_target,observation_features[t])
-            #Q_target = Q_target.squeeze() 
-                
-            #反証行動
-            edge_index = (observation_edges[t]==0).nonzero(as_tuple=False).t().contiguous()
-            edge_features = self.create_edge_features(Q_target,edge_index)
+            if r == len(self.memory.reward) - 1:
+                G_r[r] = self.memory.reward[r].clone()
 
-            #実際に取った行動
-            edge_index_taken = (observation_edges[t]==1).nonzero(as_tuple=False).t().contiguous()
-            edge_features_taken = self.create_taken_edge_features(Q,edge_index_taken)
-                
-                #Q_beforeいらないかも〜
-                #Q_target_before = self.critic_target_before(observation_edges[t].nonzero(as_tuple=False).t().contiguous(),self.obs.identity) 
-                #real_Q_target[t]  = (Q_target + Q_target_before).squeeze()
-    
-            real_Q_target[t,:,:]  = edge_features
-            real_Q_taken[t,:,:] = edge_features_taken
-
-        #反証的ベースライン
-        #これで32x20x32を返す
-        #baseline = pi * real_Q_target
-        #→時間の和をとる
-        #32x32で各行はagentaの反証行動の値
-        pi_new = pi.detach().clone().permute(1,0,2)
-        baseline = torch.sum(pi_new * real_Q_target,dim=1)
-        max_indices = []
-        Q_taken_target =torch.empty(self.story_count,self.agent_num)
-            #Q_taken_li =[]
-        for i in range(self.agent_num):
-            action_taken = actions[:,i,:].type(torch.long).reshape(self.story_count, -1)  
-            #5->10を予測するので5
-            for j in range(self.story_count):
-                Q_taken_target_num = 0
-
-                max_indices.append(torch.where(action_taken[j] == 1)[0].tolist())
-                actions_taken = max_indices
-                Q_taken_target[j] = real_Q_taken[j][i]*action_taken[j]
-
-            #利得関数
-  
-            advantage = Q_taken_target - baseline
-            #あるagent:iのすべての時間での他のノードととのエッジの生成確率
-            #advantage_re = advantage.reshape(self.story_count,1)
-            advantage_re = advantage
-            log_pi_mul = torch.mul(pi[i],action_taken) 
-            log_pi_mul[log_pi_mul == float(0.0)] = torch.exp(torch.tensor(2.0))
-            log_pi = torch.log(log_pi_mul)
-            log_pi[log_pi == float(2.0)] = 0.0
-            actor_loss =actor_loss - torch.mean(advantage_re * log_pi)
-            r = torch.empty(len(reward[:, i]))
-
-            for t in range(len(reward[:, i])):
-                    #ゴールに到達した場合は,次の状態価値関数は0
-                if t == self.story_count-1:
-                    r[t] = reward[:, i][t]
-                        #r_li.append(reward[:, i][t])
-                    #ゴールでない場合は、
-                else:
-                        #Reward + γV(st+1)
-                        #print(t, Q_taken_target[t + 1])
-                    #reward[:, i][t]はスカラー
-                    r[t] = reward[:, i][t] + self.gamma * torch.sum(real_Q_taken[t + 1][i])
-     
-            #print(torch.sum(real_Q_taken,dim=1)[i].size())
-
-
-            critic_loss = critic_loss + torch.mean((r - torch.sum(real_Q_taken[:,i,:],dim=1))**2)
-        # train critic
-        print("i reach here")
-        critic_optimizer.zero_grad()
-        critic_loss.backward(retain_graph=True)
-        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1)
-        #print("a&b_grad",self.obs.alpha,self.obs.beta)
-
-        critic_optimizer.step()
+            else:
+                G_r[r] = gamma*G_r[r+1].clone() + self.memory.reward[r].clone()
        
 
- 
-        #actor
-            #torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 5)
-
-
-
-        actor_optimizer.zero_grad() 
-        actor_loss.backward()
-
-        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1)
-
-
-
-        with torch.no_grad():
-           
-            self.actor.T -= 0.1 * self.actor.T.grad
-            self.actor.e -= 10000 * self.actor.e.grad
-            self.actor.r -= 0.1 * self.actor.r.grad
-            self.actor.W -= 0.1 * self.actor.W.grad
-
-        print("T_grad",self.actor.T.grad,self.actor.T)
-        print("e_grad",self.actor.e.grad,self.actor.e)
-        print("r_grad",self.actor.r.grad,self.actor.r)
-        print("w_grad",self.actor.W.grad,self.actor.W)
+        #baselineの作成
+        for i in range(len(self.memory.reward)):
+            #print( "f",self.memory.reward[i])
             
+            if i == 0:
+                baseline[i] = self.memory.reward[i].clone()
+                #G_t[i] = self.memory.reward[i].clone()
+            
+            else:
+                baseline[i] = (((baseline[i-1]*i)+self.memory.reward[i])/(i+1)).clone()
+                #G_t[i] = gamma*G_t[i-1].clone()+self.memory.reward[i].clone()
 
-
-
-
-        if self.count == self.target_update_steps:
-            self.critic_target.load_state_dict(self.critic.state_dict())
-            self.count = 0
-        else:
-            self.count += 1
-
-        self.memory.clear()
-
-        return self.actor.T,self.actor.e,self.actor.r,self.actor.W,self.alpha,self.beta
-    
-
-    
-
-def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time):
-
-    actor = Actor(T,e,r,w,persona)
+        #print(n_v.size()) 10x1
+        #print("aa",self.memory.reward.size()) 10x32x1
+        #slf.,memory.reward 10x32x1
+        #r1x32x1
   
-    #personaはじめは均等
-    policy_ration = torch.empty(step,len(persona[0]),agent_num)
+        for i in range(2):
+            G,loss = 0,0
+            for i in range(storycount):
+        
+                old_policy = self.memory.probs[i]   
+                new_policy =  self.new_actor.forward(self.memory.features[i],self.memory.edges[i],i)
+                ratio =torch.exp(torch.log(new_policy+1e-1) - torch.log(old_policy+1e-1))
+                ratio_clipped = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
+                #G = G_r[i] - baseline[i]
+                G = G_r[i] - baseline[i]
+                reward_unclipped = ratio * G
+                reward_clipped = ratio_clipped * G
+                reward = torch.min(reward_unclipped, reward_clipped)
+                # 最大化のために-1を掛ける
+                #print("Er",torch.sum(torch.log(new_policy[i])))
+                #print("ra",ratio,ratio_clipped)
+                #print("ra",torch.sum(torch.isnan(ratio)),torch.sum(torch.isnan(ratio_clipped)))
+                #print("reward",torch.sum(reward_unclipped),torch.sum(reward_clipped))
+                loss = loss - torch.sum(torch.log(new_policy[i])*reward)
 
-    for time in range(step):
-        polic_prob = actor.calc_ration(
-                    load_data.feature[base_time+time].clone(),
-                    load_data.adj[base_time+time].clone(),
-                    persona
-                    )
+          
 
-        policy_ration[time] = polic_prob
 
+            self.new_actor_optimizer.zero_grad()
+            loss.backward(retain_graph=True)
+                        # 勾配の計算と適用
+            
+            #for param in self.new_actor.parameters():
+            #    if param.grad is not None:
+            #        param.grad.data = param.grad.data / (param.grad.data.norm() + 1e-6)
+
+            torch.nn.utils.clip_grad_norm_(self.new_actor.parameters(), 5)
+
+            #for name, param in self.new_actor.named_parameters():
+            #    if param.grad is not None:
+            #        print(f"{i}:{name} grad: {param.grad}")
+            #    else:
+            #        print(f"{i}:{name} grad is None")
+
+            self.new_actor_optimizer.step()
+            print("update",self.new_actor.T,self.new_actor.e,self.new_actor.r,self.new_actor.W)
+            
+        T,e,r,w = self.new_actor.T.clone().detach(),self.new_actor.e.clone().detach(),self.new_actor.r.clone().detach(),self.new_actor.W.clone().detach()
+        del old_policy,new_policy,ratio,ratio_clipped,G,reward_unclipped,reward_clipped
+        del reward, G_r, baseline, loss,self.new_actor, self.new_actor_optimizer, self.actor
+        gc.collect()
+        
+        return T,e,r,e
+    
+#@profile
+def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time,temperature):
+
+    actor = Actor(T,e,r,w,persona,agent_num,temperature)
+
+    policy_prob = actor.calc_ration(
+                load_data.feature[base_time].clone(),
+                load_data.adj[base_time].clone(),
+                persona
+                )
+    
+
+
+    #時間に対して縮約 5,4,32,32 -> 5,4,32,32
+    top = policy_prob
 
     #分子　全ての時間　 あるペルソナに注目
-    rik = torch.empty(agent_num,len(persona[0]))
+    rik = torch.empty(step,agent_num,len(persona[0][0]))
 
+    #分母 top時間に縮約、bottom:ペルソナについて縮約 5,4,32,32 ->5,1,32,32
+    top = torch.where(top > 0.0, top, 1e-4)
+    bottom = torch.sum(top,dim=1,keepdim=True)
+    top = torch.sum(top,dim=3)
+    bottom= torch.sum(bottom,dim=3)
+    # ration 5,4,32,32
 
-    top = torch.sum(policy_ration,dim = 0)
+    ration = top/(bottom)
 
-    #分母 すべての時間,全てのpolicy_ration計算
-    bottom = torch.sum(top,dim=0)
+    #ration = torch.div(top,bottom)
+    # ぎょう方向に縮約
+    #print("行動単位のration",ration
+    #5,4,32,32 -> 5,4,32,1
+    #ration = torch.mean(ration,dim=3)
 
-    #for n in range(len(persona)):
-    ration = torch.div(top,bottom)
-
-    for i in range(agent_num):
-        for k in range(len(persona[0])):
-            rik[i,k] = ration[k,i]
-
+    for m in range(step):
+        for n in range(agent_num):
+            for l in range(len(persona[0][0])):
+                original = ration[m,l,n]
+                rik[m,n,l] = original.detach()
+    
+    del actor,policy_prob,top,bottom,ration,original
+    gc.collect()
     return rik
+    
 
+#@profile
+def show():
+    print("dell")
 
-def execute_data():
+#@profile
+def execute_data(p,skiptime,attempt,persona_num,data_name,data_type,del_type):
     ##デバッグ用
     torch.autograd.set_detect_anomaly(True)
     #alpha,betaの読み込み
-       #ペルソナの取り出し
-    #ペルソナの数[3,4,5,6,8,12]
-    persona_num = 4
-    path = "gamma{}.npy".format(int(persona_num))
+    if data_name == "NIPS":
+        action_dim = 32
+    else:
+        action_dim = 500
+
+
+    LEARNED_TIME = 4
+    GENERATE_TIME = 5
+    TOTAL_TIME = 10
+    story_count = 5
+    load_data = init_real_data()
+    agent_num = len(load_data.adj[LEARNED_TIME])
+    input_size = len(load_data.feature[LEARNED_TIME][1])
+
+    path_n = "optimize/{}/{}/t={}/edge/percent={}/attempt={}/".format(data_type,data_name,skiptime,p,attempt)
+    path = path_n+"persona={}/gamma.npy".format(persona_num)
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
-    persona_ration = torch.from_numpy(persona_ration).to(device)
+    #5,32,4
+    persona_ration = torch.from_numpy(np.tile(persona_ration,(story_count,1,1))).to(device)
 
 
-    #print(persona_ration)
-    path = "means{}.npy".format(int(persona_num))
+    path = path_n+"persona={}/means.npy".format(persona_num)
     means = np.load(path)
     means = means.astype("float32")
     means = torch.from_numpy(means).to(device)
+
+
+      #あるノードにi関する情報を取り除く
+    #list[tensor]のキモい構造なので
+   
+    delete_path = path_n+"/delete_index"
+    with open(delete_path, "r") as f:
+        delete_index = f.readlines()
+    if del_type == "edge":
+        #print("edge")
+
+        edgeindex=load_data.adj[skiptime][:,:].nonzero(as_tuple=False)
+        #print(edgeindex)
+        #print(delete_index)
+        
+        for i in delete_index:
+            #print(i)
+            n = edgeindex[int(i)]
+        
+            #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+            load_data.adj[skiptime][n.tolist()[0],n.tolist()[1]]=0
+            #print(data.adj[skiptime][n.tolist()[0],n.tolist()[1]])
+        #exit()
+    else:
+        #print("attr")
+
+
+        featureindex=load_data.feature[skiptime][:,:].nonzero(as_tuple=False)
+        for i in delete_index:
+            n = featureindex[int(i)]
+                            #print("bf",data.feature[skiptime].sum())
+            load_data.feature[skiptime][n.tolist()[0],n.tolist()[1]]=0
+
+    #重み(固定値)
     alpha = means[:,0]
     beta = means[:,1]
+    gamma = means[:,2]
+
     print("means",means)
     print("alpha",alpha)
     print("beta",beta)
-    LEARNED_TIME = 3
-    GENERATE_TIME = 5
-    TOTAL_TIME = 10
-    load_data = init_real_data()
-    agent_num = len(load_data.adj[LEARNED_TIME])
-    input_size = 81580
-    action_dim = 500
-    gamma = 0.90
-    lr_a = 0.1
-    lr_c = 0.005
-    target_update_steps = 8
-    alpha = alpha
+    print("gamma",gamma)
 
-    beta = beta
-    T = np.array(
-        [1.0 for i in range(persona_num)],
-        dtype=np.float32,
-    )
-    e = np.array(
-        [1.0 for i in range(persona_num)],
-        dtype=np.float32,
-    )
+    #パラメータ
+    mu = 0.8922
+    lr = 0.01
+    temperature = 0.01
 
-    r = np.array(
-        [1.0 for i in range(persona_num)],
-        dtype=np.float32,
-    )
 
-    w = np.array(
-        [1.0 for i in range(persona_num)],
-        dtype=np.float32,
-    )
+    
+    T = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    e = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    r = torch.tensor([0.75 for _ in range(persona_num)], dtype=torch.float32)
+    w = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+  
 
-    persona = persona_ration
-
-    N = len(alpha)
-
-    episodes = 32
-    story_count = 10
     ln = 0
-    sub_ln = []
+    ln_sub = 0
+
     flag = True
     episode = 0
+    episodes_reward = []
 
-
-
-
-    #n_episodes = 10000
-
-    while flag or ln_sub <= 1:
+    while flag and ln_sub <= 1:
         
-
+        print("----------episode:{}----------".format(episode))
 
         # E-step
-        if episode == 0:
+        #mixture_ratio:混合比率
 
+        if episode == 0:
             mixture_ratio = persona_ration
        
         else:
-            print(episode)
-            print("-------------------------")
-            #mixture_ratio = persona_ration
-            #softの時は外す
-            mixture_ratio = e_step(
+            new_mixture_ratio = e_step(
                 agent_num=agent_num,
                 load_data=load_data,
                 T=T,
@@ -406,200 +314,267 @@ def execute_data():
                 r=r,
                 w=w,
                 persona=persona_ration,
-                step = GENERATE_TIME,
-                base_time=LEARNED_TIME
+                step = story_count,
+                base_time=LEARNED_TIME,
+                temperature=temperature
                 )
- 
+     
+                      
+            # スムージングファクター
+            if episode <= 10:
+                clip_ration = 0.2
+                updated_prob_tensor = (1 - clip_ration) * mixture_ratio + clip_ration * new_mixture_ratio
+                mixture_ratio = updated_prob_tensor
+                del updated_prob_tensor
+                gc.collect()
+            else:
+                mixture_ratio = new_mixture_ratio
+
+
         #personaはじめは均等
-        if episode == 0:
+        
                     #環境の設定
-            obs = Env(
-                agent_num=agent_num,
-                edges=load_data.adj[LEARNED_TIME].clone(),
-                feature=load_data.feature[LEARNED_TIME].clone(),
-                temper=T,
-                alpha=alpha,
-                beta=beta,
-                persona=mixture_ratio
-            )
-    
-   
-        obs.reset(
-                load_data.adj[LEARNED_TIME].clone(),
-                load_data.feature[LEARNED_TIME].clone(),
-                alpha=alpha,
-                beta=beta,
-                persona=mixture_ratio
-                )
+        obs = Env(
+            agent_num=agent_num,
+            edges=load_data.adj[LEARNED_TIME].clone(),
+            feature=load_data.feature[LEARNED_TIME].clone(),
+            alpha=alpha,
+            beta=beta,
+            gamma=gamma,
+            persona=mixture_ratio
+        )
+
+        #else:
+        #    obs.reset(
+        #            load_data.adj[LEARNED_TIME].clone(),
+        #            load_data.feature[LEARNED_TIME].clone(),
+        #            persona=mixture_ratio
+        #            )
+            
+        
+        agents = PPO(obs,agent_num, input_size, action_dim,lr, mu,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
         episode_reward = 0
-        episodes_reward = []
-        agents = COMA(obs,agent_num, input_size, action_dim, lr_c, lr_a, gamma, target_update_steps,T,e,r,w,mixture_ratio,story_count)
+        #print("persona_ration",mixture_ratio)
+
+        for time in range(story_count):
+
+            edge,feature = obs.state()
+            edge_probs,edge_action,feat_action= agents.get_actions(edge,feature,time)
 
 
-
-        for i in range(story_count):
-
-            edges,feature = obs.state()
-            feat,action = agents.get_actions(i,edges,feature)
-            reward = obs.step(feat,action)
-            agents.memory.reward[i]=reward
-            episode_reward += reward.sum()
+            #属性値を確率分布の出力と考えているので、ベルヌーイ分布で値予測
+    
+            reward = obs.step(feat_action,edge_action,time)
+            agents.memory.probs[time]=edge_probs.clone()
+            agents.memory.edges[time] = edge.clone()
+            agents.memory.features[time] = feature.clone()
+            #print("pred_feat",torch.sum(feat_action))
+            #print("pred_edge",torch.sum(edge_action))
+            agents.memory.next_edges[time]=edge_action.clone()
+            agents.memory.next_features[time]=feat_action.clone()
+            agents.memory.reward[time]=reward.clone()
+            episode_reward = episode_reward + reward.clone().detach().sum()
+            del edge,feature,edge_probs,edge_action,feat_action,reward
+            gc.collect()
+      
 
         episodes_reward.append(episode_reward)
+        #print("epsiode_rewaerd",episodes_reward[-1])
+        T,e,r,w= agents.train(mu)
+        #print("パラメータ",T,e,r,w)
+
+        #print("persona_ration",mixture_ratio)
 
 
-        agents.train()
-        T = agents.actor.T
-        e = agents.actor.e
-        r = agents.actor.r
-        w = agents.actor.W
-        ln_before = ln
-        ln = agents.ln
-        ln_sub =abs(ln-ln_before)
+        #ln_before = ln
+        #ln = agents.ln
+        #ln_sub =abs(ln-ln_before)
         episode += 1
-        sub_ln.append([ln_sub,episode_reward])
-        print("ln_sub---------------------------------",ln_sub)
-        episode += 1
-        alpha = agents.alpha
-        beta = agents.beta
-
-        print("pr",mixture_ratio)
+        #sub_ln.append([ln_sub,episode_reward])
+        #print("ln_sub---------------------------------",ln_sub)
+   
+    
+     
         if episode % 10 == 0:
             #print(reward)
+        
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
-            print("T",T,"e",e,"r",r,"w",w,"alpha",alpha,"beta",beta)
-        if episode >= 50:
+
+        if episode >=50:
             flag = False
+
+        else:
+            
+            del episode_reward
+            del agents.memory,agents,obs
+            gc.collect()
+         
+ 
+
+
     calc_log = np.zeros((10, 5))
     calc_nll_log = np.zeros((10, 5))
     attr_calc_log = np.zeros((10, 5))
     attr_calc_nll_log = np.zeros((10, 5))
-    print(sub_ln)
-    agents.critic_target.train() 
-    agents.critic.train() 
+
+    print("学習終了")
+    print("パラメータ",T,e,r,w)
+
+            
+    new_mixture_ratio = e_step(
+                agent_num=agent_num,
+                load_data=load_data,
+                T=T,
+                e=e,
+                r=r,
+                w=w,
+                persona=persona_ration,
+                step = story_count,
+                base_time=LEARNED_TIME,
+                temperature=temperature
+            )
+
+                      
+
+    # スムージングファクター
+    #
+    # a = 0.1
+    #print("nm",new_mixture_ratio)
+    #updated_prob_tensor = (1 - a) * mixture_ratio + a * new_mixture_ratio
+    mixture_ratio = new_mixture_ratio
+    agents = PPO(obs,agent_num, input_size, action_dim,lr, gamma,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
+
+
+        
     for count in range(10):
+
         obs.reset(
             load_data.adj[LEARNED_TIME].clone(),
             load_data.feature[LEARNED_TIME].clone(),
-            alpha=alpha,
-            beta=beta,
-            persona=persona
+            persona=mixture_ratio
         )
+   
+        for test_time in range(TOTAL_TIME - GENERATE_TIME):
 
-        for t in range(TOTAL_TIME - GENERATE_TIME):
-            gc.collect()
-            #field.state()隣接行列、属性値を返す
-            #neighbor_state, feat = field.state()
-            #->部分観測(自分のエッジの接続、属性値の情報)にする
-          
             edges, feature = obs.state()
-            #print("stae",neighbor_state)
-            #print("feat",feat)
-            feat, action = agents.get_actions(
-                t,edges, feature
-            )
-            del edges, feature
+            edge_action,edge_prob ,feat_prob ,feat_action = agents.actor.test(edges,feature,test_time)
+            reward = obs.step(feat_action,edge_action,test_time)
 
-            reward = obs.step(feat,action)
+            #属性値の評価 
+            pred_prob = torch.ravel(feat_prob).to("cpu")
+            pred_prob = pred_prob.to("cpu").detach().numpy()
 
-            target_prob = torch.ravel(feat).to("cpu")
-         
-            gc.collect()
             detach_attr = (
-                torch.ravel(load_data.feature[GENERATE_TIME + t])
+                torch.ravel(load_data.feature[GENERATE_TIME + test_time])
                 .detach()
                 .to("cpu")
             )
+
             detach_attr[detach_attr > 0] = 1.0
             pos_attr = detach_attr.numpy()
-            attr_numpy = np.concatenate([pos_attr], 0)
-            target_prob = target_prob.to("cpu").detach().numpy()
+            attr_test = np.concatenate([pos_attr], 0)
+            attr_predict_probs = np.concatenate([pred_prob], 0)
+            print("属性値の総数")
+        
+            #print("pred feat sum",attr_predict_probs.reshape((500, -1)).sum(axis=1))
+            #print("target edge sum",attr_test.reshape((500, -1)).sum(axis=1))
+            print("pred feat sum",attr_predict_probs.sum())
+            print("feat action sum",feat_action.sum())
+            print("target edge sum",attr_test.sum())
+            
 
-            attr_predict_probs = np.concatenate([target_prob], 0)
+
             try:
+                
                 # NLLを計算
                 criterion = nn.CrossEntropyLoss()
                 error_attr = criterion(
                     torch.from_numpy(attr_predict_probs),
-                    torch.from_numpy(attr_numpy),
+                    torch.from_numpy(attr_test),
                 )
-                auc_actv = roc_auc_score(attr_numpy, attr_predict_probs)
-            except ValueError as ve:
-                print(ve)
-                pass
+               
             finally:
-                print("attr auc, t={}:".format(t), auc_actv)
+                auc_actv = roc_auc_score(attr_test, attr_predict_probs)
+                print("attr auc, t={}:".format(test_time), auc_actv)
+                #print("attr auc, t={}:".format(test_time), pr_auc)
                 #print("attr nll, t={}:".format(t), error_attr.item())
-                attr_calc_log[count][t] = auc_actv
-                attr_calc_nll_log[count][t] = error_attr.item()
-            del (
-                target_prob,
-                pos_attr,
-                attr_numpy,
-                attr_predict_probs,
-                auc_actv,
-            )
-            gc.collect()
+                #attr_calc_log[count][test_time] = auc_actv
+                attr_calc_log[count][test_time] = auc_actv
+                attr_calc_nll_log[count][test_time] = error_attr.item()
+            
+      
 
+            #エッジの評価
 
-            pi_test= agents.memory.test(t)
-            #print(len(pi_test))
-            #print(len(pi_test[0]))
-            #print(len(pi_test[0][0]))
-            #flattened_list = [item for sublist1 in pi_test for sublist2 in sublist1 for item in sublist2]
-            ##print(len(flattened_list))
-            #pi_test = torch.tensor(flattened_list)
-            pi_test = pi_test.view(-1)
-
-            gc.collect()
+            #予測データ
+            target_prob= edge_prob
+            #print("pi",pi_test)     
+            target_prob = target_prob.view(-1)
+            target_prob = target_prob.to("cpu").detach().numpy()
+            edge_predict_probs = np.concatenate([target_prob], 0)
+            
+            #テストデータ
             detach_edge = (
-                torch.ravel(load_data.adj[GENERATE_TIME + t])
+                torch.ravel(load_data.adj[GENERATE_TIME + test_time])
                 .detach()
                 .to("cpu")
             )
-            #テストデータ
+
             pos_edge = detach_edge.numpy()
-            edge_numpy = np.concatenate([pos_edge], 0)
+            edge_test = np.concatenate([pos_edge], 0)
 
-            #予測データ
-            target_prob = pi_test.to("cpu").detach().numpy()
-
-            edge_predict_probs = np.concatenate([target_prob], 0)
-    
-            #print(target_prob.shape)
-            #print(edge_numpy.shape)
-            #print(edge_predict_probs.shape)
-            # NLLを計算
+            print("エッジの総数")
+            #print("pred feat sum",edge_predict_probs.reshape((500, -1)).sum(axis=1))
+            #print("target edge sum",edge_test.reshape((500, -1)).sum(axis=1))
+            print("pred edge sum",edge_predict_probs.sum())
+            print("acction edge sum",edge_action.sum())
+            print("target edge sum",edge_test.sum())
 
             criterion = nn.CrossEntropyLoss()
             error_edge = criterion(
                 torch.from_numpy(edge_predict_probs),
-                torch.from_numpy(edge_numpy),
+                torch.from_numpy(edge_test),
             )
-            auc_calc = roc_auc_score(edge_numpy, edge_predict_probs)
-  
-       
+            auc_calc = roc_auc_score(edge_test, edge_predict_probs)
+            #precision, recall, _ = precision_recall_curve(edge_test, edge_predict_probs)
+            #auc_calc = auc(recall, precision)
             #print("-------")
-            print("edge auc, t={}:".format(t), auc_calc)
+            print("edge auc, t={}:".format(test_time), auc_calc)
             #print("edge nll, t={}:".format(t), error_edge.item())
             #print("-------")
-
-
-            calc_log[count][t] = auc_calc
-            calc_nll_log[count][t] = error_edge.item()
-
+            print(T,e,r,w)
+            calc_log[count][test_time] = auc_calc
+            calc_nll_log[count][test_time] = error_edge.item()
             agents.memory.clear()
-            
-        #print("---")
 
+    
+    path_save = "experiment_data/{}/{}/t={}/{}/percent={}/attempt={}/persona={}".format(data_type,data_name,skiptime,del_type,p,attempt,persona_num)
 
-    np.save("experiment_data/DBLP/abligation/persona={}/proposed_edge_auc".format(persona_num), calc_log)
-    np.save("experiment_data/DBLP/abligation/persona={}/proposed_edge_nll".format(persona_num), calc_nll_log)
-    np.save("experiment_data/DBLP/abligation/persona={}/proposed_attr_auc".format(persona_num), attr_calc_log)
-    np.save("experiment_data/DBLP/abligation/persona={}/proposed_attr_nll".format(persona_num), attr_calc_nll_log)
+    fpr_a ,tpr_a, _ = roc_curve(1-attr_test, 1-attr_predict_probs)
+    plt.figure()
+    plt.plot(fpr_a, tpr_a, marker='o')
+    plt.xlabel('FPR: False positive rate')
+    plt.ylabel('TPR: True positive rate')
+    plt.grid()
+    plt.savefig(path_save+"/sklearn_roc_curve.png")
+
+    fpr, tpr, _= roc_curve(edge_test, edge_predict_probs)
+    plt.clf()
+    plt.plot(fpr, tpr, marker='o')
+    
+    plt.xlabel('FPR: False positive rate')
+    plt.ylabel('TPR: True positive rate')
+    plt.grid()
+    plt.savefig(path_save+"/edge_sklearn_roc_curve")
+
+    np.save(path_save+"/proposed_edge_auc", calc_log)
+    np.save(path_save+"/proposed_edge_nll", calc_nll_log)
+    np.save(path_save+"/proposed_attr_auc", attr_calc_log)
+    np.save(path_save+"/proposed_attr_nll", attr_calc_nll_log)
     print("t",T,"e",e,"r",r,"w",w)
-    np.save("experiment_data/DBLP/abligation/persona={}/parameter".format(persona_num),np.concatenate([alpha.detach(),beta.detach().numpy(),T.detach().numpy(),e.detach().numpy()],axis=0))
-    np.save("experiment_data/DBLP/abligation/persona={}/rw_paramerter".format(persona_num),np.concatenate([r.detach().numpy().reshape(1,-1),w.detach().numpy().reshape(1,-1)],axis=0))
+    print(mixture_ratio)
+    np.save(path_save+"/persona_ration",np.concatenate([mixture_ratio.detach().numpy()],axis=0))
+    np.save(path_save+"/paramerter",np.concatenate([T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()],axis=0))
 
 
   
@@ -608,4 +583,12 @@ def execute_data():
 
 
 if __name__ == "__main__":
-    execute_data()
+    #[5,8,12,16,24,32,64,128]
+    #[4,8,12,16]
+    skiptime = 4 
+    for attempt in range(10):
+        for p in [5,15,30,50,75]:
+            for i in [5,25,50]:
+                for del_type in ["edge","attr"]:
+                    print(attempt,p,del_type)
+                    execute_data(p,skiptime,attempt,i,"DBLP","imcomplete",del_type)

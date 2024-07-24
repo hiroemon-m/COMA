@@ -66,7 +66,7 @@ class Actor(nn.Module):
         for i in range(len(persona[0][0])):
             for t in range(5):
 
-                trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
+                trend = (torch.sum(attributes,dim=0)>0).repeat(self.agent_num,1)
                 #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
                 #trend = torch.where(trend>0,1,0)
                 
@@ -111,7 +111,7 @@ class Actor(nn.Module):
 
             
         for i in range(len(self.persona[0][0])):
-            trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
+            trend = (torch.sum(attributes,dim=0)>0).repeat(self.agent_num,1)
             #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
             #trend = torch.where(trend>0,1,0)
         
@@ -160,7 +160,7 @@ class Actor(nn.Module):
         attr_prob = 0
             
         for i in range(len(self.persona[0][0])):
-            trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
+            trend = (torch.sum(attributes,dim=0)>0).repeat(self.agent_num,1)
             #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
             #trend = torch.where(trend>0,1,0)
 
@@ -230,7 +230,7 @@ class Actor(nn.Module):
         edge_ber = torch.empty(len(edges),len(edges[0]),2)
             
         for i in range(len(self.persona[0][0])):
-            trend = (torch.sum(attributes,dim=0)>0).repeat(500,1)
+            trend = (torch.sum(attributes,dim=0)>0).repeat(self.agent_num,1)
             #trend = (torch.sum(attributes,dim=0)).repeat(500,1)
             #trend = torch.where(trend>0,1,0)
   
