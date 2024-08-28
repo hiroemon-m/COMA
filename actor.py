@@ -275,6 +275,8 @@ class Actor(nn.Module):
         edge_ber[:,:,0] = 10 - edge_prob
         edge_ber[:,:,1] = edge_prob
         edge_action= self.gumbel_softmax(edge_ber)[:,:,1]
+        print("属性",attr_prob[0])
+        print(attr_prob[1])
 
         return edge_action,probability,attr_prob,attr_action
 

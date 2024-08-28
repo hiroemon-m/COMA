@@ -115,9 +115,15 @@ def tolist(data) -> None:
 if __name__ == "__main__": 
     skiptime = 4
     del_type = "both"
-    for k in [3,5,8,12,16]:
-        for attempt in range(10):
-            path = "optimize/imcomplete/NIPS/t={}/both/model_param".format(skiptime)
+    data_name = "NIPS"
+    if data_name == "NIPS":
+        persona_list = [3,5,8,12,16]
+    else:
+        persona_list = [5,25,50]
+    for k in persona_list:
+        for attempt in range(1):
+
+            path = "optimize/imcomplete/{}/t={}/both/model_param".format(data_name,skiptime)
             dblp_alpha,dblp_beta,dblp_gamma = tolist(path)
             data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta,"gamma":dblp_gamma})
             
@@ -195,7 +201,7 @@ if __name__ == "__main__":
             print(np.argmax(gamma,axis=1))
 
             np.argmax(gamma,axis=1)
-            path_save = "optimize/imcomplete/NIPS/t={}/{}/attempt={}/persona={}/".format(skiptime,del_type,attempt,num)
+            path_save = "optimize/imcomplete/{}/t={}/{}/attempt={}/persona={}/".format(data_name,skiptime,del_type,attempt,num)
             np.save(
             path_save+"gamma", # データを保存するファイル名
             gamma,  # 配列型オブジェクト（listやnp.array)

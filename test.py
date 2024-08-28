@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 # First Party Library
 import csv
 import config
-from env import Env
+from env_test import Env
 from init_real_data import init_real_data
 
 #another file
@@ -37,7 +37,7 @@ class PPO:
         self.obs = obs
         self.alpha = self.obs.alpha
         self.beta = self.obs.beta
-        self.gamma = self.obs.beta
+        self.gamma = self.obs.gamma
         self.ln = 0
         self.count = 0
         self.actor = Actor(T,e,r,w,rik,self.agent_num,temperature)
@@ -150,7 +150,7 @@ class PPO:
         del reward, G_r, baseline, loss,self.new_actor, self.new_actor_optimizer, self.actor
         gc.collect()
         
-        return T,e,r,e
+        return T,e,r,w
     
 #@profile
 def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time,temperature):
@@ -208,19 +208,23 @@ def execute_data(persona_num,data_name,data_type):
     #alpha,betaの読み込み
     if data_name == "NIPS":
         action_dim = 32
-    else:
+
+    if data_name == "DBLP":
         action_dim = 500
+
+    if data_name == "Twiiter":
+        action_dim = 112044
 
 
     LEARNED_TIME = 4
     GENERATE_TIME = 5
     TOTAL_TIME = 10
     story_count = 5
-    load_data = init_real_data()
+    load_data = init_real_data(data_name)
     agent_num = len(load_data.adj[LEARNED_TIME])
     input_size = len(load_data.feature[LEARNED_TIME][1])
 
-    path_n = "param/{}/{}".format(data_name,data_type)
+    path_n = "optimize/{}/{}/".format(data_type,data_name)
     path = path_n+"persona={}/gamma.npy".format(int(persona_num))
     persona_ration = np.load(path)
     persona_ration = persona_ration.astype("float32")
@@ -243,16 +247,23 @@ def execute_data(persona_num,data_name,data_type):
     print("gamma",gamma)
 
     #パラメータ
-    mu = 0.8922
-    lr = 0.01
-    temperature = 0.01
-
-
+    if data_name == "NIPS":
+        mu = 0.194
+        lr = 1.563e-06
+        temperature = 0.01
+        T = torch.tensor([1.055 for _ in range(persona_num)], dtype=torch.float32)
+        e = torch.tensor([1.347 for _ in range(persona_num)], dtype=torch.float32)
+        r = torch.tensor([0.697 for _ in range(persona_num)], dtype=torch.float32)
+        w = torch.tensor([0.026 for _ in range(persona_num)], dtype=torch.float32)
     
-    T = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    e = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    r = torch.tensor([0.75 for _ in range(persona_num)], dtype=torch.float32)
-    w = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    else:
+        mu = 0.0229
+        lr = 0.000952
+        temperature = 0.01
+        T = torch.tensor([1.481 for _ in range(persona_num)], dtype=torch.float32)
+        e = torch.tensor([0.759 for _ in range(persona_num)], dtype=torch.float32)
+        r = torch.tensor([0.868 for _ in range(persona_num)], dtype=torch.float32)
+        w = torch.tensor([0.846 for _ in range(persona_num)], dtype=torch.float32)
   
 
     ln = 0
@@ -413,7 +424,6 @@ def execute_data(persona_num,data_name,data_type):
     agents = PPO(obs,agent_num, input_size, action_dim,lr, gamma,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
 
 
-        
     for count in range(10):
 
         obs.reset(
@@ -473,7 +483,7 @@ def execute_data(persona_num,data_name,data_type):
                 plt.ylabel('TPR: True positive rate')
 
                 plt.grid()
-                plt.savefig('experiment_data/{}/{}/persona={}/sklearn_roc_curve.png'.format(data_name,data_type,persona_num))
+                plt.savefig('sklearn_roc_curve.png'.format(data_name,data_type,persona_num))
             
             finally:
                 print("attr auc, t={}:".format(test_time), auc_actv)
@@ -516,39 +526,43 @@ def execute_data(persona_num,data_name,data_type):
                 torch.from_numpy(edge_predict_probs),
                 torch.from_numpy(edge_test),
             )
-            auc_calc = roc_auc_score(edge_test, edge_predict_probs)
-            #precision, recall, _ = precision_recall_curve(edge_test, edge_predict_probs)
-            #auc_calc = auc(recall, precision)
-            fpr, tpr, thresholds = roc_curve(edge_test, edge_predict_probs)
-            plt.clf()
-            plt.plot(fpr, tpr, marker='o')
-           
-            plt.xlabel('FPR: False positive rate')
-            plt.ylabel('TPR: True positive rate')
-            plt.grid()
-            plt.savefig('experiment_data/{}/{}/persona={}/edge_sklearn_roc_curve.png'.format(data_name,data_type,persona_num))
-            #print("-------")
+            auc_calc = roc_auc_score(edge_test, edge_predict_probs)  
             print("edge auc, t={}:".format(test_time), auc_calc)
-            #print("edge nll, t={}:".format(t), error_edge.item())
-            #print("-------")
+
             print(T,e,r,w)
             calc_log[count][test_time] = auc_calc
             calc_nll_log[count][test_time] = error_edge.item()
-            agents.memory.clear()
+            agents.memory.clear()  
 
-    
+            path_save = "experiment_data/{}/{}/persona={}".format(data_type,data_name,persona_num)
 
-    np.save("experiment_data/{}/{}/persona={}/proposed_edge_auc".format(data_name,data_type,persona_num), calc_log)
-    np.save("experiment_data/{}/{}/persona={}/proposed_edge_nll".format(data_name,data_type,persona_num), calc_nll_log)
-    np.save("experiment_data/{}/{}/persona={}/proposed_attr_auc".format(data_name,data_type,persona_num), attr_calc_log)
-    np.save("experiment_data/{}/{}/persona={}/proposed_attr_nll".format(data_name,data_type,persona_num), attr_calc_nll_log)
-    print("t",T,"e",e,"r",r,"w",w)
-    print(mixture_ratio)
-    np.save("experiment_data/{}/{}/persona={}/persona_ration".format(data_name,persona_num),np.concatenate([mixture_ratio.detach().numpy()],axis=0))
-    np.save("experiment_data/{}/{}/persona={}/paramerter".format(data_name,persona_num),np.concatenate([T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()],axis=0))
+            fpr_a ,tpr_a, _ = roc_curve(1-attr_test, 1-attr_predict_probs)
+            plt.figure()
+            plt.plot(fpr_a, tpr_a, marker='o')
+            plt.xlabel('FPR: False positive rate')
+            plt.ylabel('TPR: True positive rate')
+            plt.grid()
+            plt.savefig(path_save+"/sklearn_roc_curve.png")
 
+            fpr, tpr, _= roc_curve(edge_test, edge_predict_probs)
+            plt.clf()
+            plt.plot(fpr, tpr, marker='o')
+            
+            plt.xlabel('FPR: False positive rate')
+            plt.ylabel('TPR: True positive rate')
+            plt.grid()
+            plt.savefig(path_save+"/edge_sklearn_roc_curve")
 
-  
+            np.save(path_save+"/proposed_edge_auc", calc_log)
+            np.save(path_save+"/proposed_edge_nll", calc_nll_log)
+            np.save(path_save+"/proposed_attr_auc", attr_calc_log)
+            np.save(path_save+"/proposed_attr_nll", attr_calc_nll_log)
+            print("t",T,"e",e,"r",r,"w",w)
+            print(mixture_ratio)
+            np.save(path_save+"/persona_ration",np.concatenate([mixture_ratio.detach().numpy()],axis=0))
+            np.save(path_save+"/paramerter",np.concatenate([T.detach().numpy(),e.detach().numpy(),r.detach().numpy(),w.detach().numpy()],axis=0))
+
+        
 
 
 
@@ -556,5 +570,5 @@ def execute_data(persona_num,data_name,data_type):
 if __name__ == "__main__":
     #[5,8,12,16,24,32,64,128]
     #[4,8,12,16]
-    for i in [3,5,8,12,16]:
-        execute_data(i,"NIPS","imcomplete")
+    for i in [5,25,50]:
+        execute_data(i,"DBLP","complete")

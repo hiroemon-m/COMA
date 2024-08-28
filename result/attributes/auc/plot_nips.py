@@ -19,14 +19,14 @@ plt.title("Attribute AUC (NIPS)", fontsize=30)
 # 横軸を定義
 left = np.array([1, 2, 3, 4, 5])
 
+netevolve_data = np.load("experiment_data/baseline/complete/NIPS/attempt=0/proposed_attr_auc.npy")
+m1_attr = netevolve_data.mean(axis=0)
+std1_attr = netevolve_data.std(axis=0)
 
-netevolve_attr_data = np.load("result/attributes/auc/proposed_attr_nips_auc.npy")
-m1_attr = netevolve_attr_data.mean(axis=0)
-std1_attr = netevolve_attr_data.std(axis=0)
+proposed_data = np.load("experiment_data/complete/NIPS/persona=5/proposed_attr_auc.npy")
+m1 = proposed_data.mean(axis=0)
+std1 = proposed_data.std(axis=0)
 
-proposed_attr_data = np.load("experiment_data/NIPS/param/persona=5/proposed_attr_auc.npy")
-m1_only_attr = proposed_attr_data.mean(axis=0)
-std1_only_attr = proposed_attr_data.std(axis=0)
 
 dual_data = np.load("result/attributes/auc/dualcast_nips.npy")
 dual_m1 = dual_data.mean(axis=0)
@@ -37,20 +37,14 @@ rnn_data = np.load("result/attributes/auc/rnn_nips.npy")
 rnn_m1 = rnn_data.mean(axis=0)
 rnn_std1 = rnn_data.std(axis=0)
 
-
+plt.fill_between(left,m1 + std1,m1 - std1,alpha=0.5)
 plt.fill_between(left, m1_attr + std1_attr, m1_attr - std1_attr, alpha=0.5)
-plt.fill_between(
-    left,
-    m1_only_attr + std1_only_attr,
-    m1_only_attr - std1_only_attr,
-    alpha=0.5,
-)
 plt.fill_between(left, dual_m1 + dual_std1, dual_m1 - dual_std1, alpha=0.3)
 plt.fill_between(left, rnn_m1 + rnn_std1, rnn_m1 - rnn_std1, alpha=0.3)
 
 
 # plt.plot(left, height_proposed, label="Proposed", lw=5)
-plt.plot(left, m1_only_attr, label="Proposed", lw=5)
+plt.plot(left, m1, label="Proposed", lw=5)
 plt.plot(left, m1_attr, label="Netevolve", lw=5)
 
 plt.plot(left, dual_m1, label="DualCast")

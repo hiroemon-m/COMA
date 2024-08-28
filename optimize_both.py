@@ -90,9 +90,9 @@ class Optimizer:
        
 
 
-    def export_param(self,data_type,del_type,skiptime):
+    def export_param(self,data_type,data_name,del_type,skiptime):
         #gamma/NIPS/
-        with open("optimize/{}/NIPS/t={}/{}/model_param".format(data_type,skiptime,del_type), "w") as f:
+        with open("optimize/{}/{}/t={}/{}/model_param".format(data_type,data_name,skiptime,del_type), "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
             max_gamma = 1.0
@@ -110,10 +110,11 @@ class Optimizer:
 if __name__ == "__main__":
     skiptime = 4
     del_type = "both"
+    data_name = "NIPS"
      
 
     
-    data = init_real_data()
+    data = init_real_data(data_name)
     data_size = len(data.adj[0])
 
     alpha = torch.from_numpy(
@@ -140,6 +141,6 @@ if __name__ == "__main__":
 
     optimizer = Optimizer(data.adj, data.feature, model, data_size)
     data_type = "imcomplete"
-    for t in range(5):
+    for t in range(skiptime):
         optimizer.optimize(t)
-        optimizer.export_param(data_type,del_type,skiptime)
+        optimizer.export_param(data_type,data_name,del_type,skiptime)

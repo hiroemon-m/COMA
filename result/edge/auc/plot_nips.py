@@ -18,11 +18,11 @@ ax.set_xlim(1, 5)
 # 横軸を定義
 left = np.array([1, 2, 3, 4, 5])
 
-netevolove_data = np.load("result/edge/auc/proposed_edge_nips_auc.npy")
-m1 = netevolove_data .mean(axis=0)
-std1 = netevolove_data .std(axis=0)
+netevolve_data = np.load("experiment_data/baseline/complete/NIPS/attempt=0/proposed_edge_auc.npy")
+m1 = netevolve_data .mean(axis=0)
+std1 = netevolve_data .std(axis=0)
 
-proposed_data = np.load("experiment_data/NIPS/param/persona=5/proposed_edge_auc.npy")
+proposed_data = np.load("experiment_data/complete/NIPS/persona=5/proposed_edge_auc.npy")
 m1_attr = proposed_data.mean(axis=0)
 std1_attr = proposed_data.std(axis=0)
 

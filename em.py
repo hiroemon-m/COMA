@@ -112,9 +112,16 @@ def tolist(data) -> None:
 
 
 
-if __name__ == "__main__": 
-    for k in [3,5,8,12,16]:
-        data_name = "NIPS"
+if __name__ == "__main__":
+    data_name = "Twitter" 
+    if data_name == "DBLP":
+        persona_list = [5,25,50]
+    if data_name == "NIPS":
+        persona_list = [3,5,8,12,16]
+    if data_name == "Twitter":
+        persona_list = [5,20,50,100]
+    for k in persona_list:
+  
         path = "optimize/complete/{}/model_param".format(data_name)
         dblp_alpha,dblp_beta,dblp_gamma = tolist(path)
         data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta,"gamma":dblp_gamma})
@@ -194,11 +201,12 @@ if __name__ == "__main__":
 
         np.argmax(gamma,axis=1)
         np.save(
-        "param/{}/persona={}/gamma".format(data_name,num), # データを保存するファイル名
+            
+        "optimize/complete/{}/persona={}/gamma".format(data_name,num), # データを保存するファイル名
         gamma,  # 配列型オブジェクト（listやnp.array)
         )
         np.save(
-        "param/{}/persona={}/means".format(data_name,num), # データを保存するファイル名
+        "optimize/complete/{}/persona={}/means".format(data_name,num), # データを保存するファイル名
         means,  # 配列型オブジェクト（listやnp.array)
         )
         

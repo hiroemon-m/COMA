@@ -1,13 +1,11 @@
 # Standard Library
-import random
-from enum import IntEnum
 
 # Third Party Library
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from tqdm import tqdm
+
 
 # First Party Library
 import config
@@ -37,7 +35,7 @@ class Optimizer:
         return
 
     def optimize(self, t: int):
-        impact = 0
+
         feat = self.feats[t].to(device)
         edge = self.edges[t].to(device) 
         self.optimizer.zero_grad()
@@ -90,9 +88,9 @@ class Optimizer:
        
 
 
-    def export_param(self,data_type,del_type,skiptime,p,k):
+    def export_param(self,data_type,data_name):
         #gamma/NIPS/
-        with open("optimize/{}/DBLP/t={}/{}/percent={}/attempt={}/model_param".format(data_type,skiptime,del_type,p,k), "w") as f:
+        with open("optimize/{}/{}/model_param".format(data_type,data_name), "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
             max_gamma = 1.0
@@ -108,78 +106,39 @@ class Optimizer:
 
 
 if __name__ == "__main__":
-    for p in [5,15,30,50,75]:
-        for skiptime in [4]:
-            for k in range(10):
-                for del_type in ["edge","attr"]:
-                    data = init_real_data()
-                    data_size = len(data.adj[0])
+    data_name = "Twitter"
 
-                    alpha = torch.from_numpy(
-                        np.array(
-                            [1.0 for i in range(data_size)],
-                            dtype=np.float32,
-                        ),
-                    ).to(device)
+    data = init_real_data(data_name)
+    data_size = len(data.adj[0])
 
-                    beta = torch.from_numpy(
-                        np.array(
-                            [1.0 for i in range(data_size)],
-                            dtype=np.float32,
-                        ),
-                    ).to(device)
+    alpha = torch.from_numpy(
+        np.array(
+            [1.0 for i in range(data_size)],
+            dtype=np.float32,
+        ),
+    ).to(device)
 
-                    gamma = torch.from_numpy(
-                        np.array(
-                            [1.0 for i in range(data_size)],
-                            dtype=np.float32,
-                        ),
-                    ).to(device)
-                    model = Model(alpha, beta, gamma)
+    beta = torch.from_numpy(
+        np.array(
+            [1.0 for i in range(data_size)],
+            dtype=np.float32,
+        ),
+    ).to(device)
 
-                    if del_type == "edge":
-                
-                        #エッジの接続リスト
-                        edgeindex=data.adj[skiptime][:,:].nonzero(as_tuple=False)
-                        #エッジの本数
-                        edge_num = edgeindex.size()[0]
-                        #print("fn",edge_num)
-                        #パーセントに応じて取り除く数を決める
-                        skipnum = int(edge_num*(p/100))
-                        #エッジの欠損
-                        skipindex = random.sample(range(0, edge_num), skipnum)
-                        for i in skipindex:
-                            n = edgeindex[i]
-                
-                            data.adj[skiptime][n.tolist()[0],n.tolist()[1]]=0
-                            #print("Edge",data.adj[skiptime])
+    gamma = torch.from_numpy(
+        np.array(
+            [1.0 for i in range(data_size)],
+            dtype=np.float32,
+        ),
+    ).to(device)
+    model = Model(alpha, beta, gamma)
 
-                    else:#属性値消す
-                        featureindex=data.feature[skiptime][:,:].nonzero(as_tuple=False)
-                        feature_num = featureindex.size()[0]
-                        #print("fn",feature_num)
-                        skipnum = int(feature_num*(p/100))
-                        skipindex = random.sample(range(0, feature_num), skipnum)
-                        for i in skipindex:
-                            n = featureindex[i]
-                            #print("bf",data.feature[skiptime].sum())
-                            data.feature[skiptime][n.tolist()[0],n.tolist()[1]]=0
-                            #print(data.feature[skiptime].sum())
-                          
-                        
-        
-        
-                
-                    with open("optimize/imcomplete/DBLP/t={}/{}/percent={}/attempt={}/delete_index".format(skiptime,del_type,p,k), "w") as f:
-                        for i in skipindex:
-                            f.write(
-                                    "{}\n".format(str(i))
-                                    )
-            
     
 
-                    optimizer = Optimizer(data.adj, data.feature, model, data_size)
-                    data_type = "imcomplete"
-                    for t in range(5):
-                        optimizer.optimize(t)
-                        optimizer.export_param(data_type,del_type,skiptime,p,k)
+
+    optimizer = Optimizer(data.adj, data.feature, model, data_size)
+    data_type = "complete"
+    for t in range(5):
+        optimizer.optimize(t)
+        optimizer.export_param(data_type,data_name)
+        print(device)

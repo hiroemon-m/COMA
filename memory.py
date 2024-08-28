@@ -8,8 +8,10 @@ class Memory:
         self.data_set = data_set
         if self.data_set == "NIPS":
             self.attr_num = 2411
-        else:
+        if self.data_set == "DBLP":
             self.attr_num = 3854
+        if self.data_set == "Twitter":
+            self.attr_num = 5372
         self.probs = torch.empty([self.story_count,self.agent_num,self.agent_num])
         self.edges = torch.empty([self.story_count,self.agent_num,self.agent_num])
         self.features = torch.empty([self.story_count,self.agent_num, self.attr_num])

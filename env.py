@@ -86,5 +86,5 @@ class Env:
 
     #隣接行列を返す
     def state(self):
-
+        
         return self.edges, self.feature

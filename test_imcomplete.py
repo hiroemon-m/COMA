@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 # First Party Library
 import csv
 import config
-from env import Env
+from env_test import Env
 from init_real_data import init_real_data
 
 #another file
@@ -37,7 +37,7 @@ class PPO:
         self.obs = obs
         self.alpha = self.obs.alpha
         self.beta = self.obs.beta
-        self.gamma = self.obs.beta
+        self.gamma = self.obs.gamma
         self.ln = 0
         self.count = 0
         self.actor = Actor(T,e,r,w,rik,self.agent_num,temperature)
@@ -150,7 +150,7 @@ class PPO:
         del reward, G_r, baseline, loss,self.new_actor, self.new_actor_optimizer, self.actor
         gc.collect()
         
-        return T,e,r,e
+        return T,e,r,w
     
 #@profile
 def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time,temperature):
@@ -216,7 +216,7 @@ def execute_data(p,skiptime,attempt,persona_num,data_name,data_type,del_type):
     GENERATE_TIME = 5
     TOTAL_TIME = 10
     story_count = 5
-    load_data = init_real_data()
+    load_data = init_real_data(data_name)
     agent_num = len(load_data.adj[LEARNED_TIME])
     input_size = len(load_data.feature[LEARNED_TIME][1])
 
@@ -276,16 +276,23 @@ def execute_data(p,skiptime,attempt,persona_num,data_name,data_type,del_type):
     print("gamma",gamma)
 
     #パラメータ
-    mu = 0.8922
-    lr = 0.01
-    temperature = 0.01
-
-
+    if data_name == "NIPS":
+        mu = 0.194
+        lr = 1.563e-06
+        temperature = 0.01
+        T = torch.tensor([1.055 for _ in range(persona_num)], dtype=torch.float32)
+        e = torch.tensor([1.347 for _ in range(persona_num)], dtype=torch.float32)
+        r = torch.tensor([0.697 for _ in range(persona_num)], dtype=torch.float32)
+        w = torch.tensor([0.026 for _ in range(persona_num)], dtype=torch.float32)
     
-    T = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    e = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
-    r = torch.tensor([0.75 for _ in range(persona_num)], dtype=torch.float32)
-    w = torch.tensor([1.0 for _ in range(persona_num)], dtype=torch.float32)
+    else:
+        mu = 0.0229
+        lr = 0.000952
+        temperature = 0.01
+        T = torch.tensor([1.481 for _ in range(persona_num)], dtype=torch.float32)
+        e = torch.tensor([0.759 for _ in range(persona_num)], dtype=torch.float32)
+        r = torch.tensor([0.868 for _ in range(persona_num)], dtype=torch.float32)
+        w = torch.tensor([0.846 for _ in range(persona_num)], dtype=torch.float32)
   
 
     ln = 0
@@ -585,10 +592,11 @@ def execute_data(p,skiptime,attempt,persona_num,data_name,data_type,del_type):
 if __name__ == "__main__":
     #[5,8,12,16,24,32,64,128]
     #[4,8,12,16]
-    skiptime = 4 
-    for attempt in range(10):
-        for p in [5,15,30,50,75]:
+    skiptime = 4
+    #一旦3
+    for attempt in range(1):
+        for p in [15,30,50,75]:
             for i in [5,25,50]:
                 for del_type in ["edge","attr"]:
                     print(attempt,p,del_type)
-                    execute_data(p,skiptime,attempt,i,"DBLP","imcomplete",del_type)
+                    execute_data(p,skiptime,attempt+1,i,"DBLP","imcomplete",del_type)

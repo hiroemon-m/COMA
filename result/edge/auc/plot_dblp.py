@@ -21,11 +21,13 @@ plt.title("Edge AUC (DBLP)", fontsize=30)
 # 横軸を定義
 left = np.array([1, 2, 3, 4, 5])
 
-netevolve_data = np.load("result/edge/auc/proposed_edge_dblp_auc.npy")
+
+
+netevolve_data = np.load("experiment_data/baseline/complete/DBLP/attempt=0/proposed_edge_auc.npy")
 m1 = netevolve_data.mean(axis=0)
 std1 = netevolve_data.std(axis=0)
 
-proposed_data = np.load("experiment_data/DBLP/param/persona=5/proposed_edge_auc.npy")
+proposed_data = np.load("experiment_data/complete/DBLP/persona=5/proposed_edge_auc.npy")
 m1_attr = proposed_data.mean(axis=0)
 std1_attr = proposed_data.std(axis=0)
 
