@@ -53,7 +53,7 @@ def spmat2tensor(sparse_mat):
 
 
 class attr_graph_dynamic_spmat_Reddit:
-    def __init__(self, dirIn="./data/", dataset="Reddit", T=15):
+    def __init__(self, dirIn="./data/", dataset="Reddit", T=10):
         dirIn = dirIn + dataset
         self.T = T
         self.G_list = []

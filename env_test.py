@@ -70,6 +70,8 @@ class Env:
         costs = self.edges.sum(1).view(self.agent_num,1)*persona_beta.view(self.agent_num,1)
         costs_add = torch.add(costs, 0.001)
         reward = reward + torch.sub(sim_add, costs_add)
+        print("edge",self.edges.sum(1).size())
+        print("reward",reward.size())
         
 
         return reward

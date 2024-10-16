@@ -2,6 +2,8 @@ from numpy import linalg as LA
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
+from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import inv
 import pandas as pd
 
 
@@ -113,66 +115,35 @@ def tolist(data) -> None:
 
 
 if __name__ == "__main__":
-    data_name = "Twitter" 
+    data_name = "Reddit" 
     if data_name == "DBLP":
         persona_list = [5,25,50]
     if data_name == "NIPS":
         persona_list = [3,5,8,12,16]
     if data_name == "Twitter":
         persona_list = [5,20,50,100]
+    if data_name == "Reddit":
+        persona_list = [5,20,50,100,200]
     for k in persona_list:
-  
+        #データの読み込み
         path = "optimize/complete/{}/model_param".format(data_name)
         dblp_alpha,dblp_beta,dblp_gamma = tolist(path)
+        #df化
         data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta,"gamma":dblp_gamma})
-        
+        #標準化
         transformer = StandardScaler()
         norm = transformer.fit_transform(data_dblp)
+        data_norm = pd.DataFrame(norm, columns=["alpha", "beta", "gamma"])
 
-        data_norm = data_dblp.copy(deep=True)
-        data_norm["alpha"] = norm[:,0]
-        data_norm["beta"] = norm[:,1]
-        data_norm["gamma"] = norm[:,2]
-        
-        alpha,beta,gamma = tolist(path)
-        data = pd.DataFrame({"alpha":alpha,"beta":beta,"gamma":gamma})
-        dblp_array = np.array([data_norm["alpha"].tolist(),
-                        data_norm["beta"].tolist(),data_norm["gamma"].tolist()])
-        dblp_array = dblp_array.T
+        #k-means
         num = k
-    
-        pred = KMeans(n_clusters=num).fit_predict(dblp_array)
-        dblp_kmean = data_norm
+        pred = KMeans(n_clusters=num).fit_predict(data_norm.to_numpy())
+        dblp_kmean = data_norm.copy()
         dblp_kmean["cluster_id"] = pred
-        
 
 
-        data = data.loc[:,["alpha","beta","gamma"]]
-        # (サンプル数, 特徴量の次元数) の2次元配列で表されるデータセットを作成する。
-        # 変換器を作成する。
-        transformer = StandardScaler()
-        # 変換する。
-        data.loc[:,["alpha","beta","gamma"]] = transformer.fit_transform(data)
-
-        em = 0
-        li = []
-        #for i in data["alpha"].tolist():
-        #    li.append([i])
-        #for k,j in enumerate(data["beta"].tolist()):
-        #    li[k].append(j)
-
-        for i in range(len(data["alpha"].tolist())):
-            li.append([data["alpha"][i],data["beta"][i],data["gamma"][i]])
-
-
-        em = np.array(li)
-        
-        alpha,beta,gamma = tolist(path)
-        data = pd.DataFrame({"alpha":alpha,"beta":beta,"gamma":gamma})
-        dblp_kmean = data_norm
-        dblp_kmean["cluster_id"] = pred
-        print(dblp_kmean["cluster_id"].value_counts())
-
+        N = len(dblp_alpha)
+        em = data_norm.to_numpy()
         mean = [[]for i in range(num)]
         sigma = []
         for i in range(num):
@@ -180,7 +151,7 @@ if __name__ == "__main__":
             mean[i].append(dblp_kmean["alpha"][dblp_kmean["cluster_id"]==i].mean())
             mean[i].append(dblp_kmean["beta"][dblp_kmean["cluster_id"]==i].mean())
             mean[i].append(dblp_kmean["gamma"][dblp_kmean["cluster_id"]==i].mean())
-            #sigma.append(np.cov(dblp_kmean[dblp_kmean["cluster_id"]==i]["alpha"],dblp_kmean[dblp_kmean["cluster_id"]==i]["beta"],dblp_kmean[dblp_kmean["cluster_id"]==i]["gamma"],bias=True))
+
             cluster_data = dblp_kmean[dblp_kmean["cluster_id"] == i][["alpha", "beta", "gamma"]]
             if not cluster_data.empty:
                 # np.covは2次元データを期待するので、3次元データの場合は転置して与える
@@ -190,12 +161,14 @@ if __name__ == "__main__":
         means = []
         for i in mean:
             means.append(np.array(i))
-        print("aaa")
+
+
+
+        gamma,means = em_algorithm(N,num,em,means,sigma)
+        #original_means = transformer.inverse_transform(means)
         print(dblp_kmean["cluster_id"])
         print(mean)
         print(sigma)
-        gamma,means = em_algorithm(len(alpha),num,em,means,sigma)
-        #original_means = transformer.inverse_transform(means)
         print(gamma)
         print(np.argmax(gamma,axis=1))
 

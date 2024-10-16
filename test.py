@@ -7,12 +7,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
-import tensorflow as tf
 from sklearn.metrics import roc_curve
 from sklearn.metrics import precision_recall_curve, auc
 import matplotlib.pyplot as plt
 
 # First Party Library
+import time
 import csv
 import config
 from env_test import Env
@@ -61,6 +61,7 @@ class PPO:
 
     #@profile
     def train(self,gamma):
+        a = time.time()
         """ 訓練用の関数
         Input:割引率
         Output:
@@ -112,7 +113,14 @@ class PPO:
                 ratio =torch.exp(torch.log(new_policy+1e-1) - torch.log(old_policy+1e-1))
                 ratio_clipped = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
                 #G = G_r[i] - baseline[i]
+                #修正？rewardwo32,1->32,32にしないと
                 G = G_r[i] - baseline[i]
+                print("---------------------------")
+                print(G.size())
+                print(ratio.size())
+                print("G_r",G_r[i].size())
+                print("bl",baseline[i].size())
+                print("mr",self.memory.reward[r].size())
                 reward_unclipped = ratio * G
                 reward_clipped = ratio_clipped * G
                 reward = torch.min(reward_unclipped, reward_clipped)
@@ -150,10 +158,13 @@ class PPO:
         del reward, G_r, baseline, loss,self.new_actor, self.new_actor_optimizer, self.actor
         gc.collect()
         
+        b = time.time()
+        print("train",b-a)
         return T,e,r,w
     
 #@profile
 def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time,temperature):
+    a = time.time()
 
     actor = Actor(T,e,r,w,persona,agent_num,temperature)
 
@@ -194,6 +205,8 @@ def e_step(agent_num,load_data,T,e,r,w,persona,step,base_time,temperature):
     
     del actor,policy_prob,top,bottom,ration,original
     gc.collect()
+    b = time.time()
+    print("estep",b-a)
     return rik
     
 
@@ -570,5 +583,9 @@ def execute_data(persona_num,data_name,data_type):
 if __name__ == "__main__":
     #[5,8,12,16,24,32,64,128]
     #[4,8,12,16]
-    for i in [5,25,50]:
+    s = time.time()
+    for i in [5]:
         execute_data(i,"DBLP","complete")
+    e = time.time()
+
+    print("time:",s-e)

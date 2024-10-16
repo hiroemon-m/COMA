@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
+import time
 
 # First Party Library
 import config
@@ -41,15 +41,24 @@ class Optimizer:
         self.optimizer.zero_grad()
         norm = feat.norm(dim=1)[:, None] + 1e-8
         feat_norm = feat.div(norm)
-        dot_product = torch.matmul(feat_norm, torch.t(feat_norm)).to(device)
 
-        sim = torch.mul(edge, dot_product)
-        sim = torch.mul(sim, self.model.alpha)
-        sim = torch.add(sim, 0.001)
+        #dot_product = torch.matmul(feat_norm, torch.t(feat_norm)).to(device)
+        #sim = torch.mul(edge, dot_product)
+        #sim = torch.mul(sim, self.model.alpha)
+        #sim = torch.add(sim, 0.001)
+        #costs = torch.mul(edge, self.model.beta)
+        #costs = torch.add(costs, 0.001)
+        #reward = torch.sub(sim, costs)
 
-        costs = torch.mul(edge, self.model.beta)
-        costs = torch.add(costs, 0.001)
-        reward = torch.sub(sim, costs)
+        feat_norm = feat_norm.to_sparse()
+        edge = edge.to_sparse()
+        dot_product = torch.sparse.mm(feat_norm,feat_norm.t())
+        sim = torch.sparse.mm(edge,dot_product)
+        sim = torch.sparse.mm(sim, self.model.alpha)
+        costs = torch.sparse.mm(edge,self.model.beta)
+        reward = torch.sum(torch.sub(sim, costs))
+
+       
 
         #if t > 0:
         #    trend = (torch.sum(self.feats[t-1],dim=0)>0).repeat(500,1)
@@ -65,22 +74,25 @@ class Optimizer:
                 
 
         if t > 0:
-            print(self.edges[t])
-            new_feature = torch.matmul(self.edges[t],self.feats[t])
-            new_feature = torch.matmul(new_feature,torch.t(new_feature))
-            old_feature = torch.matmul(self.edges[t-1], self.feats[t-1])
-            old_feature = torch.matmul(old_feature,torch.t(old_feature))
 
-            reward += (
+            new_feature = torch.sparse.mm(self.edges[t].to_sparse(),self.feats[t].to_sparse())
+            new_feature = torch.sparse.mm(new_feature,new_feature.t())
+            old_feature = torch.sparse.mm(self.edges[t-1].to_sparse(), self.feats[t-1].to_sparse())
+            old_feature = torch.sparse.mm(old_feature,old_feature.t())
+            e = torch.eye(data_size)
+            sub = torch.sparse.addmm(new_feature.to_dense(),old_feature,e,alpha=-1,beta=1)
+            sub = sub/len(new_feature[0])
+
+            reward += torch.sum(
                 #self.model.gamma/torch.sqrt(torch.sum(torch.abs(new_feature - old_feature)**2))
-                self.model.gamma*(torch.abs(new_feature - old_feature)+1e-4)/len(new_feature[0])
+                torch.sparse.mm(sub,self.model.gamma)
                 #self.model.gamma/(torch.sqrt(torch.abs(new_feature - old_feature)+1e-4)**2)
-
             )
+
         #    print(torch.abs(new_feature - old_feature)+1e-4)
 
   
-        loss = -reward.sum()
+        loss = -reward
         loss.backward()
         del loss
         self.optimizer.step()
@@ -106,31 +118,17 @@ class Optimizer:
 
 
 if __name__ == "__main__":
-    data_name = "Twitter"
+    start = time.perf_counter()
+    data_name = "Reddit"
 
     data = init_real_data(data_name)
     data_size = len(data.adj[0])
+    print(data_size)
+    print(len(data.feature[0][0]))
 
-    alpha = torch.from_numpy(
-        np.array(
-            [1.0 for i in range(data_size)],
-            dtype=np.float32,
-        ),
-    ).to(device)
-
-    beta = torch.from_numpy(
-        np.array(
-            [1.0 for i in range(data_size)],
-            dtype=np.float32,
-        ),
-    ).to(device)
-
-    gamma = torch.from_numpy(
-        np.array(
-            [1.0 for i in range(data_size)],
-            dtype=np.float32,
-        ),
-    ).to(device)
+    alpha = torch.ones(data_size,1)
+    beta = torch.ones(data_size,1)
+    gamma = torch.ones(data_size,1)
     model = Model(alpha, beta, gamma)
 
     
@@ -138,7 +136,10 @@ if __name__ == "__main__":
 
     optimizer = Optimizer(data.adj, data.feature, model, data_size)
     data_type = "complete"
+
     for t in range(5):
+        
         optimizer.optimize(t)
         optimizer.export_param(data_type,data_name)
-        print(device)
+    end = time.perf_counter()
+    print((end-start)/60)

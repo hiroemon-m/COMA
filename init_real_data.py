@@ -30,7 +30,8 @@ def init_real_data(data_neam) -> LoadDataset:
         input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME) 
     if data_neam == "Twitter":
         input_graph = attr_graph_dynamic_spmat_twitter(T=TOTAL_TIME) 
-    #input_graph = attr_graph_dynamic_spmat_Reddit(T=15)
+    if data_neam == "Reddit":
+        input_graph = attr_graph_dynamic_spmat_Reddit(T=15)
 
  
     adj = input_graph.Gmat_list

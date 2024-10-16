@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torchviz import make_dot
 
 # First Party Library
+import time
 import math
 import config
 import csv
@@ -56,6 +57,7 @@ class Actor(nn.Module):
 
   
     def calc_ration(self,attributes, edges,persona):
+        a = time.time()
 
         calc_policy = torch.empty(5,len(persona[0][0]),self.agent_num,self.agent_num)
         # インプレース操作を回避するために新しい変数を使用して新しいテンソルを作成
@@ -96,14 +98,16 @@ class Actor(nn.Module):
                 x = (1 - torch.exp(-x-x))/(1 + torch.exp(-x-x))
                 calc_policy[t][i] = x
 
-            
+        b = time.time()
+        print("calc",b-a)
         return calc_policy
 
   
 
 
-    def forward(self,attributes, edges,time) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self,attributes, edges,times) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """"trainで呼び出す"""
+        a = time.time()
         edges_float = edges.float()
         edge_index = edges_float > 0
         edges =edge_index.float()
@@ -138,12 +142,13 @@ class Actor(nn.Module):
             x = (x - min_values) / ((max_values - min_values) + 1e-8)
 
             x = (1 - torch.exp(-x-x))/(1 + torch.exp(-x-x))
-            x = self.persona[time][:,i]*x 
+            x = self.persona[times][:,i]*x 
             edges_prob = edges_prob + x
         edges_prob = edges_prob + 1e-3
         
 
-
+        b = time.time()
+        print("for",b-a)
         return edges_prob
 
 
