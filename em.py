@@ -42,7 +42,7 @@ def calc_gaussian_prob(x, mean, sigma):
     sigma_inv = np.linalg.inv(sigma)  # 逆行列の計算
     a = np.sqrt((2 * np.pi) ** sigma.ndim * np.linalg.det(sigma))
     b = np.exp(-0.5 * (d * sigma_inv * d.T).item())  # .item() はスカラー値を取得するために使用
-    return b / a
+    return b / a 
 
 
 def calc_likelihood(X, means, sigmas, pi,K):
@@ -84,8 +84,7 @@ def em_algorithm(N, K, X, means, sigmas):
         new_likelihood = calc_likelihood(X, means, sigmas, pi, K)
         if abs(new_likelihood - likelihood) < 0.01 or iteration >= 20:
             is_converged = True
-        print(likelihood)
-        print(new_likelihood)
+
         likelihood = new_likelihood
         iteration += 1
 
@@ -115,18 +114,19 @@ def tolist(data) -> None:
 
 
 if __name__ == "__main__":
-    data_name = "Reddit" 
+    data_name = "Twitter" 
     if data_name == "DBLP":
         persona_list = [5,25,50]
     if data_name == "NIPS":
         persona_list = [3,5,8,12,16]
     if data_name == "Twitter":
-        persona_list = [5,20,50,100]
+        persona_list = [5]
     if data_name == "Reddit":
         persona_list = [5,20,50,100,200]
     for k in persona_list:
         #データの読み込み
-        path = "optimize/complete/{}/model_param".format(data_name)
+
+        path = "optimize/complete/{}/model.param.data.fast".format(data_name)
         dblp_alpha,dblp_beta,dblp_gamma = tolist(path)
         #df化
         data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta,"gamma":dblp_gamma})

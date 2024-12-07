@@ -2,7 +2,7 @@
 import gc
 
 # Third Party Library
-from memory_profiler import profile
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -225,7 +225,7 @@ def execute_data(persona_num,data_name,data_type):
     if data_name == "DBLP":
         action_dim = 500
 
-    if data_name == "Twiiter":
+    if data_name == "Twitter":
         action_dim = 112044
 
 
@@ -253,7 +253,8 @@ def execute_data(persona_num,data_name,data_type):
     alpha = means[:,0]
     beta = means[:,1]
     gamma = means[:,2]
-
+    print("load",load_data.adj)
+    print("load",load_data.feature)
     print("means",means)
     print("alpha",alpha)
     print("beta",beta)
@@ -269,12 +270,21 @@ def execute_data(persona_num,data_name,data_type):
         r = torch.tensor([0.697 for _ in range(persona_num)], dtype=torch.float32)
         w = torch.tensor([0.026 for _ in range(persona_num)], dtype=torch.float32)
     
-    else:
+        if data_name == "DBLP":
         mu = 0.0229
         lr = 0.000952
         temperature = 0.01
         T = torch.tensor([1.481 for _ in range(persona_num)], dtype=torch.float32)
         e = torch.tensor([0.759 for _ in range(persona_num)], dtype=torch.float32)
+        r = torch.tensor([0.868 for _ in range(persona_num)], dtype=torch.float32)
+        w = torch.tensor([0.846 for _ in range(persona_num)], dtype=torch.float32)
+
+    else:
+        mu = 0.0229
+        lr = 0.000952
+        temperature = 0.01
+        T = torch.tensor([2 for _ in range(persona_num)], dtype=torch.float32)
+        e = torch.tensor([0.5 for _ in range(persona_num)], dtype=torch.float32)
         r = torch.tensor([0.868 for _ in range(persona_num)], dtype=torch.float32)
         w = torch.tensor([0.846 for _ in range(persona_num)], dtype=torch.float32)
   
@@ -312,7 +322,7 @@ def execute_data(persona_num,data_name,data_type):
      
                       
             # スムージングファクター
-            if episode <= 10:
+            if episode <= 2:
                 clip_ration = 0.2
                 updated_prob_tensor = (1 - clip_ration) * mixture_ratio + clip_ration * new_mixture_ratio
                 mixture_ratio = updated_prob_tensor
@@ -391,7 +401,7 @@ def execute_data(persona_num,data_name,data_type):
             print(episodes_reward)
             print(f"episode: {episode}, average reward: {sum(episodes_reward[-10:]) / 10}")
 
-        if episode >=50:
+        if episode >=10:
             flag = False
 
         else:
@@ -585,7 +595,7 @@ if __name__ == "__main__":
     #[4,8,12,16]
     s = time.time()
     for i in [5]:
-        execute_data(i,"DBLP","complete")
+        execute_data(i,"Twitter","complete")
     e = time.time()
 
     print("time:",s-e)

@@ -6,6 +6,7 @@ from data_loader import (
     attr_graph_dynamic_spmat_twitter,
     attr_graph_dynamic_spmat_Reddit,
     spmat2sptensor,
+    spmat2tensor,
 )
 
 TOTAL_TIME = 10
@@ -33,21 +34,30 @@ def init_real_data(data_neam) -> LoadDataset:
     if data_neam == "Reddit":
         input_graph = attr_graph_dynamic_spmat_Reddit(T=15)
 
+    if data_neam == "Twitter":
  
-    adj = input_graph.Gmat_list
-    feature = input_graph.Amat_list
+        adj = input_graph.Gmat_list
+        feature = input_graph.Amat_list
+    #if data_neam == "NIPS":
 
-    for t in range(input_graph.T):
-        adj[t] = adj[t]
-        _ = spmat2sptensor(adj[t])
+     #   adj = input_graph.Gmat_list
+     #   feature = input_graph.Amat_list
 
-        adj[t] = _
-        feature_ = input_graph.Amat_list[t]
+    else:
+        adj = input_graph.Gmat_list
+        feature = input_graph.Amat_list
 
-        _ = spmat2sptensor(feature_)
-        feature[t] = _
+        for t in range(input_graph.T):
+            adj[t] = adj[t]
+            _ = spmat2tensor(adj[t])
 
-    
+            adj[t] = _
+            feature_ = input_graph.Amat_list[t]
+
+            _ = spmat2tensor(feature_)
+            feature[t] = _
+
+    print(adj[0])
 
     return LoadDataset(
         adj=adj,

@@ -1,15 +1,18 @@
 # Standard Library
+import random
+from enum import IntEnum
 
 # Third Party Library
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import time
+from tqdm import tqdm
 
 # First Party Library
 import config
 from init_real_data import init_real_data
+import time
 
 device = config.select_device
 
@@ -30,35 +33,32 @@ class Optimizer:
         self.feats = feats
         self.model = model
         self.size = size
-        self.optimizer = optim.SGD(self.model.parameters(), lr=0.005)
+        self.optimizer = optim.SGD(self.model.parameters(), lr=0.0005)
 
         return
 
     def optimize(self, t: int):
+        impact = 0
+        feat = self.feats[t].to_dense().to(device)
 
-        feat = self.feats[t].to(device)
-        edge = self.edges[t].to(device) 
+        edge = self.edges[t].to_dense().to(device) 
         self.optimizer.zero_grad()
         norm = feat.norm(dim=1)[:, None] + 1e-8
         feat_norm = feat.div(norm)
-
-        #dot_product = torch.matmul(feat_norm, torch.t(feat_norm)).to(device)
-        #sim = torch.mul(edge, dot_product)
-        #sim = torch.mul(sim, self.model.alpha)
-        #sim = torch.add(sim, 0.001)
-        #costs = torch.mul(edge, self.model.beta)
-        #costs = torch.add(costs, 0.001)
-        #reward = torch.sub(sim, costs)
-
-        feat_norm = feat_norm.to_sparse()
-        edge = edge.to_sparse()
-        dot_product = torch.sparse.mm(feat_norm,feat_norm.t())
-        sim = torch.sparse.mm(edge,dot_product)
-        sim = torch.sparse.mm(sim, self.model.alpha)
-        costs = torch.sparse.mm(edge,self.model.beta)
+        dot_product = torch.matmul(feat_norm, torch.t(feat_norm)).to(device)
+        sim = torch.mul(edge, dot_product)
+        print(sim.size(),self.model.alpha.size())
+        sim = torch.mul(sim, self.model.alpha)
+        sim = torch.add(sim, 0.001)
+        costs = torch.mul(edge, self.model.beta)
+        costs = torch.add(costs, 0.001)
         reward = torch.sum(torch.sub(sim, costs))
 
-       
+        print(torch.sum(feat),torch.sum(edge))
+        print("BEtr",reward.sum())
+
+
+
 
         #if t > 0:
         #    trend = (torch.sum(self.feats[t-1],dim=0)>0).repeat(500,1)
@@ -74,26 +74,30 @@ class Optimizer:
                 
 
         if t > 0:
-
-            new_feature = torch.sparse.mm(self.edges[t].to_sparse(),self.feats[t].to_sparse())
-            new_feature = torch.sparse.mm(new_feature,new_feature.t())
-            old_feature = torch.sparse.mm(self.edges[t-1].to_sparse(), self.feats[t-1].to_sparse())
-            old_feature = torch.sparse.mm(old_feature,old_feature.t())
-            e = torch.eye(data_size)
-            sub = torch.sparse.addmm(new_feature.to_dense(),old_feature,e,alpha=-1,beta=1)
-            sub = sub/len(new_feature[0])
-
+            
+            new_feature = torch.matmul(self.edges[t].to_dense(),self.feats[t])
+            #new_feature = torch.matmul(new_feature,torch.t(new_feature))
+            old_feature = torch.matmul(self.edges[t-1].to_dense(), self.feats[t-1])
+            #old_feature = torch.matmul(old_feature,torch.t(old_feature))
+            #print("nosub",torch.sum((new_feature - old_feature)))
+            #print("sub",torch.sum(torch.abs(new_feature - old_feature)))
+            #print("scalesub",torch.sum(torch.abs(new_feature - old_feature)+1e-4)/len(self.feats[t][0]))
+            print("tr",torch.sum(torch.matmul(self.model.gamma.view(1,-1),(torch.abs(new_feature - old_feature)+1e-4)/len(self.feats[t][0]))))
+            print("rd",reward.sum())
             reward += torch.sum(
                 #self.model.gamma/torch.sqrt(torch.sum(torch.abs(new_feature - old_feature)**2))
-                torch.sparse.mm(sub,self.model.gamma)
+                torch.matmul(self.model.gamma.view(1,-1),(torch.abs(new_feature - old_feature)+1e-4)/len(self.feats[t][0]))
                 #self.model.gamma/(torch.sqrt(torch.abs(new_feature - old_feature)+1e-4)**2)
+
             )
-
         #    print(torch.abs(new_feature - old_feature)+1e-4)
-
+        
+        print("rs",torch.sum(reward))
   
-        loss = -reward
+        loss = -reward.sum()
         loss.backward()
+        print(self.model.alpha.grad[:5])
+        print(self.model.beta.grad[:5])
         del loss
         self.optimizer.step()
 
@@ -102,7 +106,7 @@ class Optimizer:
 
     def export_param(self,data_type,data_name):
         #gamma/NIPS/
-        with open("optimize/{}/{}/model_param".format(data_type,data_name), "w") as f:
+        with open("optimize/{}/{}/model.param.data.test.fast".format(data_type,data_name), "w") as f:
             max_alpha = 1.0
             max_beta = 1.0
             max_gamma = 1.0
@@ -119,12 +123,13 @@ class Optimizer:
 
 if __name__ == "__main__":
     start = time.perf_counter()
-    data_name = "Reddit"
+    data_name = "DBLP"
 
     data = init_real_data(data_name)
     data_size = len(data.adj[0])
+
     print(data_size)
-    print(len(data.feature[0][0]))
+
 
     alpha = torch.ones(data_size,1)
     beta = torch.ones(data_size,1)

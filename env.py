@@ -19,7 +19,11 @@ class Env:
         self.agent_num = agent_num
         self.edges = edge
         #隣接行列をエッジリストへ変換
-        self.feature = feature
+        attr = torch.where(feature.values() >= 0.5,
+                            torch.tensor(1.0, requires_grad=True), 
+                            torch.tensor(0.0, requires_grad=True)
+                            )
+        self.feature = attr
         self.feature_t = self.feature.t()
         self.alpha = alpha.clone().detach().requires_grad_(True)
         self.beta = beta.clone().detach().requires_grad_(True)

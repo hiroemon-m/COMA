@@ -15,7 +15,30 @@ np.set_printoptions(threshold=np.inf)
 device = config.select_device
 
 
+
+
 def spmat2sptensor(sparse_mat):
+    # Third Party Library
+
+    shape = sparse_mat.shape
+    sparse_mat = sparse_mat.tocoo()
+
+    sparse_tensor = torch.sparse_coo_tensor(
+        torch.LongTensor([sparse_mat.row.tolist(), sparse_mat.col.tolist()]),
+        torch.FloatTensor(sparse_mat.data.astype(np.float32)),
+        shape,
+
+    )
+    print(sparse_tensor.size())
+
+    return sparse_tensor
+
+
+
+
+
+
+def spmat2tensor(sparse_mat):
     # Third Party Library
     import torch
 
@@ -23,33 +46,6 @@ def spmat2sptensor(sparse_mat):
     #疎行列(CSR)から通常の行列に変形する
     dense = torch.from_numpy(dense.astype(np.float32)).clone().to(device)
     return dense
-
-
-def spmat2tensor(sparse_mat):
-    import torch
-
-    shape = sparse_mat.shape
-    #
-
-    sparse_mat = sparse_mat.tocoo()
-    #print("Sp_m",sparse_mat)
-    #print("Sp_row",sparse_mat.row)
-    #print("Sp_value",sparse_mat.data)
-    #SciPy(scipy.sparse)の疎行列をcooにする
-
-
-    sparse_tensor = torch.sparse_coo_tensor(
-        torch.LongTensor([sparse_mat.row.tolist(), sparse_mat.col.tolist()]),
-        torch.FloatTensor(sparse_mat.data.astype(np.float32)),
-        shape,
-    )
-    #COO形式の疎行列の作成.インデックスの座標と値をペアになるように渡すことで初期化
-    #torch.FloatTensor:32bitの浮動小数点数
-    #torch.LongTensor:64bitの符号付き整数
-
-    if torch.cuda.is_available():
-        sparse_tensor = sparse_tensor.cuda()
-    return sparse_tensor
 
 
 class attr_graph_dynamic_spmat_Reddit:
@@ -132,21 +128,15 @@ class attr_graph_dynamic_spmat_DBLP:
             )["A"]
             G_matrix = G_matrix.T[survive].T
             A_matrix = A_matrix.T.dot(G_matrix).T
-            A = nx.DiGraph()
-            self.A_list.append(A)
-            self.Amat_list.append(A_matrix)
+            
+            self.Amat_list.append(spmat2sptensor(A_matrix))
             G_matrix = G_matrix.T.dot(G_matrix)
             G_matrix[G_matrix > 0] = 1.0
-            G = nx.from_scipy_sparse_matrix(
-                G_matrix, create_using=nx.DiGraph()
-            )
-            print("G",G)
 
-            self.len = len(G.nodes())
+            self.Gmat_list.append(spmat2sptensor(G_matrix))
             
-            self.G_list.append(G)
-            self.Gmat_list.append(G_matrix)
-            self.Gtensor_list.append(spmat2tensor(G_matrix))
+            
+
            
 
 
@@ -156,8 +146,6 @@ class attr_graph_dynamic_spmat_NIPS:
         dirIn = dirIn + dataset
         # input G
         self.T = T
-        self.G_list = []
-        self.A_list = []
         self.Gmat_list = []
         self.Amat_list = []
         self.Gtensor_list = []
@@ -180,23 +168,25 @@ class attr_graph_dynamic_spmat_NIPS:
             )["G"]
             A_matrix = io.loadmat(
                 dirIn + "/A" + str(t) + ".mat", struct_as_record=True
-            )["A"]     
+            )["A"] 
+
 
             G_matrix = G_matrix.T[survive].T
             A_matrix = A_matrix.T.dot(G_matrix).T
             A = nx.DiGraph()
-            self.A_list.append(A)
+    
+            self.Amat_list.append(spmat2sptensor(A_matrix))
+            
             self.Amat_list.append(A_matrix)
             G_matrix = G_matrix.T.dot(G_matrix)
             G_matrix[G_matrix > 0] = 1.0
             G = nx.from_scipy_sparse_matrix(
                 G_matrix, create_using=nx.DiGraph()
             )
-            self.len = len(G.nodes())
-            self.G_list.append(G)
-            self.Gmat_list.append(G_matrix)
 
-            self.Gtensor_list.append(spmat2tensor(G_matrix))
+            self.Gmat_list.append(spmat2sptensor(G_matrix))    
+
+            
 
 
 
@@ -222,6 +212,7 @@ class attr_graph_dynamic_spmat_twitter:
             else:
                 survive += np.array(G_matrix.sum(axis=0)) * 1.0 / T
         survive = np.ravel(survive > 0.1)
+        print(sum(survive))
         for t in range(T):
             G_matrix = io.loadmat(
                 dirIn + "/G" + str(t) + ".mat", struct_as_record=True
@@ -229,18 +220,14 @@ class attr_graph_dynamic_spmat_twitter:
             A_matrix = io.loadmat(
                 dirIn + "/A" + str(t) + ".mat", struct_as_record=True
             )["A"]
-            G_matrix = G_matrix[survive]
-            G_matrix = G_matrix[:, survive][:n_nodes_fortime, :n_nodes_fortime]
-            A_matrix = A_matrix[survive][:n_nodes_fortime, :n_nodes_fortime]
-            A = nx.DiGraph()
-            self.A_list.append(A)
-            self.Amat_list.append(A_matrix)
-            G_matrix[G_matrix > 0] = 1.0
-            G = nx.from_scipy_sparse_matrix(
-                G_matrix, create_using=nx.DiGraph()
-            )
 
-            self.len = len(G.nodes())
-            self.G_list.append(G)
-            self.Gmat_list.append(G_matrix)
+            G_matrix = G_matrix[survive,:][:,survive]
+            
+            A_matrix = A_matrix[survive]
+            
+            self.Amat_list.append(spmat2sptensor(A_matrix))
+            G_matrix[G_matrix > 0] = 1.0
+
+            self.Gmat_list.append(spmat2sptensor(G_matrix))
+  
 

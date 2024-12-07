@@ -142,6 +142,8 @@ class Actor(nn.Module):
             x = (x - min_values) / ((max_values - min_values) + 1e-8)
 
             x = (1 - torch.exp(-x-x))/(1 + torch.exp(-x-x))
+            print(x.size())
+            print(self.persona[times][:,i].size())
             x = self.persona[times][:,i]*x 
             edges_prob = edges_prob + x
         edges_prob = edges_prob + 1e-3
