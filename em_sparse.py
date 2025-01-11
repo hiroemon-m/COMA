@@ -1,62 +1,35 @@
-from numpy import linalg as LA
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import inv
 import pandas as pd
-import scipy as sp
-
-
-
-
-
-def init_gaussian_param():
-    """ ガウス分布のパラメタμ, sigmaを初期化する
-    Input:
-    Output:
-        μ: 平均値
-        sigma: 共分散行列
-    """
-    mean = np.random.rand(1, 3) * 10
-    sigma = [[1,0,0], [0,1,0],[0,0,1]]
-    return mean, sigma
 
 
 def init_mixing_param(K):
-    """ 混合率の初期化
-    Input:
-        K: the number of mixing
-    Output:
-        pi: the ratio of each mixing
-    """
-    pi = np.random.dirichlet([1] * K)
-    return pi
+    """混合率の初期化"""
+    return np.random.dirichlet([1] * K)
 
 
 def calc_gaussian_prob(x, mean, sigma):
-    x = np.matrix(x)
-    mean = np.matrix(mean)
-    sigma = sp.sparse.csr_matrix(sigma) + sp.sparse.eye(sigma.shape[0]) * 1e-5
+    """多次元ガウス分布の確率を計算"""
     d = x - mean
-    sigma_inv = sp.sparse.linalg.inv(sigma)
-    a = np.sqrt((2 * np.pi) ** sigma.shape[0] * sigma.power(2).sum())
-    b = np.exp(-0.5 * (d * sigma_inv * d.T).item())
-    return b / a
+    sigma += np.eye(sigma.shape[0]) * 1e-5  # 数値安定性
+    det = np.linalg.det(sigma)
+    inv_sigma = np.linalg.inv(sigma)
+    exp_term = -0.5 * (d @ inv_sigma @ d.T).item()
+    return np.exp(exp_term) / np.sqrt((2 * np.pi) ** sigma.shape[0] * det)
+
 
 def calc_likelihood(X, means, sigmas, pi, K):
+    """データXの現在のパラメタにおける対数尤度を計算"""
     likelihood = 0.0
-    N = len(X)
-    for n in range(N):
-        temp = 0.0
-        for k in range(K):
-            temp += pi[k] * calc_gaussian_prob(X[n], means[k], sigmas[k])
+    for n in X:
+        temp = sum(pi[k] * calc_gaussian_prob(n, means[k], sigmas[k]) for k in range(K))
         likelihood += np.log(temp)
     return likelihood
 
 
-
 def em_algorithm(N, K, X, means, sigmas):
+    """EMアルゴリズム"""
     pi = init_mixing_param(K)
     likelihood = calc_likelihood(X, means, sigmas, pi, K)
     gamma = np.zeros((N, K))
@@ -65,21 +38,21 @@ def em_algorithm(N, K, X, means, sigmas):
 
     while not is_converged:
         # E-Step
-        for n in range(N):
-            denominator = sum(pi[k] * calc_gaussian_prob(X[n], means[k], sigmas[k]) for k in range(K))
-            for k in range(K):
-                gamma[n, k] = pi[k] * calc_gaussian_prob(X[n], means[k], sigmas[k]) / denominator
+        for n, x in enumerate(X):
+            denominator = sum(pi[k] * calc_gaussian_prob(x, means[k], sigmas[k]) for k in range(K))
+            gamma[n] = [pi[k] * calc_gaussian_prob(x, means[k], sigmas[k]) / denominator for k in range(K)]
 
         # M-Step
         Nks = gamma.sum(axis=0)
         for k in range(K):
             means[k] = np.sum(gamma[:, k, np.newaxis] * X, axis=0) / Nks[k]
-            diff = sp.sparse.csr_matrix(X) - sp.sparse.csr_matrix(means[k])
-            sigmas[k] = sp.sparse.csr_matrix(np.dot(sp.sparse.diags(gamma[:, k]) * diff.T, diff)) / Nks[k]
+            diff = X - means[k]
+            sigmas[k] = (gamma[:, k] * diff.T @ diff) / Nks[k]
             pi[k] = Nks[k] / N
 
         # 収束判定
         new_likelihood = calc_likelihood(X, means, sigmas, pi, K)
+        print(abs(new_likelihood - likelihood))
         if abs(new_likelihood - likelihood) < 0.01 or iteration >= 20:
             is_converged = True
 
@@ -88,93 +61,49 @@ def em_algorithm(N, K, X, means, sigmas):
 
     return gamma, means
 
-def tolist(data) -> None:
-    np_alpha = []
-    np_beta = []
-    np_gamma = []
 
+def tolist(data):
+    """データをリスト形式で読み込む"""
+    alpha, beta, gamma = [], [], []
     with open(data, "r") as f:
-        lines = f.readlines()
-        
-        #print(lines)
-        for index, line in enumerate(lines):
-            datas = line[:-1].split(",")
-            print(datas[2])
-            np_alpha.append(np.float32(datas[0]))
-            np_beta.append(np.float32(datas[1]))
-            np_gamma.append(np.float32(datas[2]))
-
-    return np_alpha,np_beta,np_gamma
-
+        for line in f:
+            a, b, g = map(float, line.strip().split(","))
+            alpha.append(a)
+            beta.append(b)
+            gamma.append(g)
+    return alpha, beta, gamma
 
 
 if __name__ == "__main__":
-    data_name = "Twitter" 
-    if data_name == "DBLP":
-        persona_list = [5,25,50]
-    if data_name == "NIPS":
-        persona_list = [3,5,8,12,16]
-    if data_name == "Twitter":
-        persona_list = [5]
-    if data_name == "Reddit":
-        persona_list = [5,20,50,100,200]
-    for k in persona_list:
-        #データの読み込み
+    data_name = "DBLP"
+    persona_list = {"DBLP": [5, 25, 50], "NIPS": [3, 5, 8, 12, 16], "Twitter": [5], "Reddit": [5, 20, 50, 100, 200]}
+    for k in persona_list[data_name]:
+        path = f"optimize/complete/{data_name}/model.param.data.fast"
+        alpha, beta, gamma = tolist(path)
 
-        path = "optimize/complete/{}/model.param.data.fast".format(data_name)
-        dblp_alpha,dblp_beta,dblp_gamma = tolist(path)
-        #df化
-        data_dblp = pd.DataFrame({"alpha":dblp_alpha,"beta":dblp_beta,"gamma":dblp_gamma})
-        #標準化
-        transformer = StandardScaler()
-        norm = transformer.fit_transform(data_dblp)
-        data_norm = pd.DataFrame(norm, columns=["alpha", "beta", "gamma"])
+        # データフレーム化と標準化
+        data = pd.DataFrame({"alpha": alpha, "beta": beta, "gamma": gamma})
+        norm_data = StandardScaler().fit_transform(data)
+        norm_df = pd.DataFrame(norm_data, columns=["alpha", "beta", "gamma"])
 
-        #k-means
-        num = k
-        pred = KMeans(n_clusters=num).fit_predict(data_norm.to_numpy())
-        dblp_kmean = data_norm.copy()
-        dblp_kmean["cluster_id"] = pred
+        # K-means クラスタリング
+        pred = KMeans(n_clusters=k).fit_predict(norm_df)
+        norm_df["cluster_id"] = pred
 
+        # 初期化
+        em_data = norm_df[["alpha", "beta", "gamma"]].to_numpy()
+        means = [em_data[norm_df["cluster_id"] == i].mean(axis=0) for i in range(k)]
+        sigmas = [np.cov(em_data[norm_df["cluster_id"] == i].T, bias=True) for i in range(k)]
+        N = len(alpha)
 
-        N = len(dblp_alpha)
-        em = data_norm.to_numpy()
-        mean = [[]for i in range(num)]
-        sigma = []
-        for i in range(num):
-
-            mean[i].append(dblp_kmean["alpha"][dblp_kmean["cluster_id"]==i].mean())
-            mean[i].append(dblp_kmean["beta"][dblp_kmean["cluster_id"]==i].mean())
-            mean[i].append(dblp_kmean["gamma"][dblp_kmean["cluster_id"]==i].mean())
-
-            cluster_data = dblp_kmean[dblp_kmean["cluster_id"] == i][["alpha", "beta", "gamma"]]
-            if not cluster_data.empty:
-                # np.covは2次元データを期待するので、3次元データの場合は転置して与える
-                cov_matrix = np.cov(cluster_data.T, bias=True)
-                sigma.append(cov_matrix)
-
-        means = []
-        for i in mean:
-            means.append(np.array(i))
-
-
-
-        gamma,means = em_algorithm(N,num,em,means,sigma)
-        #original_means = transformer.inverse_transform(means)
-        print(dblp_kmean["cluster_id"])
-        print(mean)
-        print(sigma)
+        # EMアルゴリズム
+        gamma, means = em_algorithm(N, k, em_data, means, sigmas)
+        print(means)
+        print(sigmas)
         print(gamma)
         print(np.argmax(gamma,axis=1))
 
-        np.argmax(gamma,axis=1)
-        np.save(
-            
-        "optimize/complete/{}/persona={}/gamma".format(data_name,num), # データを保存するファイル名
-        gamma,  # 配列型オブジェクト（listやnp.array)
-        )
-        np.save(
-        "optimize/complete/{}/persona={}/means".format(data_name,num), # データを保存するファイル名
-        means,  # 配列型オブジェクト（listやnp.array)
-        )
-        
+        # 保存
+        np.save(f"optimize/complete/{data_name}/persona={k}/gamma.npy", gamma)
+        np.save(f"optimize/complete/{data_name}/persona={k}/means.npy", means)
+        np.save(f"optimize/complete/{data_name}/persona={k}/sigma.npy", means)

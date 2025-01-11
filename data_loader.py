@@ -15,8 +15,6 @@ np.set_printoptions(threshold=np.inf)
 device = config.select_device
 
 
-
-
 def spmat2sptensor(sparse_mat):
     # Third Party Library
 
@@ -29,7 +27,6 @@ def spmat2sptensor(sparse_mat):
         shape,
 
     )
-    print(sparse_tensor.size())
 
     return sparse_tensor
 
@@ -40,8 +37,6 @@ def spmat2sptensor(sparse_mat):
 
 def spmat2tensor(sparse_mat):
     # Third Party Library
-    import torch
-
     dense = sparse_mat.todense()
     #疎行列(CSR)から通常の行列に変形する
     dense = torch.from_numpy(dense.astype(np.float32)).clone().to(device)
@@ -212,7 +207,7 @@ class attr_graph_dynamic_spmat_twitter:
             else:
                 survive += np.array(G_matrix.sum(axis=0)) * 1.0 / T
         survive = np.ravel(survive > 0.1)
-        print(sum(survive))
+       
         for t in range(T):
             G_matrix = io.loadmat(
                 dirIn + "/G" + str(t) + ".mat", struct_as_record=True

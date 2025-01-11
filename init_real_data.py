@@ -27,21 +27,24 @@ class LoadDataset:
 def init_real_data(data_neam) -> LoadDataset:
     if data_neam == "NIPS":
         input_graph = attr_graph_dynamic_spmat_NIPS(T=TOTAL_TIME)
-    if data_neam == "DBLP":
-        input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME) 
-    if data_neam == "Twitter":
-        input_graph = attr_graph_dynamic_spmat_twitter(T=TOTAL_TIME) 
-    if data_neam == "Reddit":
-        input_graph = attr_graph_dynamic_spmat_Reddit(T=15)
-
-    if data_neam == "Twitter":
- 
         adj = input_graph.Gmat_list
         feature = input_graph.Amat_list
-    #if data_neam == "NIPS":
 
-     #   adj = input_graph.Gmat_list
-     #   feature = input_graph.Amat_list
+    elif data_neam == "DBLP":
+        input_graph = attr_graph_dynamic_spmat_DBLP(T=TOTAL_TIME) 
+        adj = input_graph.Gmat_list
+        feature = input_graph.Amat_list
+
+    elif data_neam == "Twitter":
+        input_graph = attr_graph_dynamic_spmat_twitter(T=TOTAL_TIME) 
+        adj = input_graph.Gmat_list
+        feature = input_graph.Amat_list
+
+    elif data_neam == "Reddit":
+        input_graph = attr_graph_dynamic_spmat_Reddit(T=15)
+
+
+
 
     else:
         adj = input_graph.Gmat_list
@@ -57,7 +60,7 @@ def init_real_data(data_neam) -> LoadDataset:
             _ = spmat2tensor(feature_)
             feature[t] = _
 
-    print(adj[0])
+
 
     return LoadDataset(
         adj=adj,

@@ -14,6 +14,100 @@ import gc
 
 device = config.select_device
 
+def norm_func(x):
+    x = x.coalesce()
+    x_indices = x.indices()
+    x_values = x.values()
+    x_size = x.size()
+    x_row_indices = x_indices[0]            # 行インデックス
+    x_squared_values = x_values ** 2                # 各値の平方
+    x_row_sums = torch.zeros(x_size[0])                # 行ごとの平方和を格納
+    x_row_sums.index_add_(0, x_row_indices, x_squared_values)  # 行ごとに値を加算
+    x_l2_norms = torch.sqrt(x_row_sums)                # 平方根を取る
+    x_normalized_values = x_values / x_l2_norms[x_row_indices] # 正規化：各非ゼロ要素を行ごとの L2 ノルムで割る
+    normalized_x_feat = torch.sparse_coo_tensor(x_indices, x_normalized_values, x_size) # 正規化されたスパーステンソルを作成
+ 
+
+    return normalized_x_feat
+
+
+"""隣接行列の類似度計算"""
+def adj_sim(adj, feat):
+    # 隣接行列
+    A_sparse = adj.coalesce()
+    row_indices, col_indices = A_sparse.indices()
+    values_A = A_sparse.values()
+    
+    # 属性値行列
+    B_sparse = feat.coalesce()
+    B_indices = B_sparse.indices()
+    B_values = B_sparse.values()
+
+    # 非ゼロインデックスに対応する行列積を計算
+    result_indices = []
+    result_values = []
+
+    for i, j in zip(row_indices, col_indices):
+        # B の行要素と列要素を取得
+        row_mask = B_indices[0] == i.item()
+        col_mask = B_indices[0] == j.item()
+        
+        row_b = B_values[row_mask]
+        col_b = B_values[col_mask]
+
+        # 行要素と列要素のインデックスを比較して共通部分を計算
+        if len(row_b) > 0 and len(col_b) > 0:
+            # サイズを合わせるために行列積を取る
+            row_indices_b = B_indices[1][row_mask]
+            col_indices_b = B_indices[1][col_mask]
+
+            # 共通する列要素を抽出
+            common_indices = torch.isin(row_indices_b, col_indices_b)
+            filtered_row_b = row_b[common_indices]
+
+            common_indices = torch.isin(col_indices_b, row_indices_b)
+            filtered_col_b = col_b[common_indices]
+
+            # 要素が一致した場合のみ積を計算
+            if len(filtered_row_b) > 0 and len(filtered_col_b) > 0:
+                result_indices.append([i.item(), j.item()])
+                result_values.append(torch.sum(filtered_row_b * filtered_col_b).item())
+
+    # スパース結果を作成
+    result_indices = torch.tensor(result_indices, dtype=torch.long).t()  # 転置して形状を整える
+    result_values = torch.tensor(result_values, dtype=torch.float32)
+    result_sparse = torch.sparse_coo_tensor(
+        result_indices,
+        result_values,
+        size=adj.size()
+    )
+
+    return result_sparse
+
+def is_csc(indices, shape):
+    """
+    与えられたインデックスがCSC形式に該当するか確認する。
+    
+    Args:
+        indices (torch.Tensor): CSC形式のインデックス（ポインタ）
+        shape (tuple): 行列の形状（行数, 列数）
+
+    Returns:
+        bool: CSC形式であればTrue、そうでなければFalse
+    """
+    if indices.dim() != 1:
+        # インデックスが1次元でない場合、CSCではない
+        return False
+    if indices.size(0) != shape[1] + 1:
+        # インデックスのサイズが列数+1でなければCSCではない
+        return False
+    if not torch.all(indices[:-1] <= indices[1:]):
+        # ポインタが単調増加でない場合、CSCではない
+        return False
+    return True
+
+
+
 
 class Model(nn.Module):
     def __init__(self, alpha, beta, gamma):
@@ -35,98 +129,48 @@ class Optimizer:
 
         return
 
-    def optimize(self, t: int):
 
-        feat = self.feats[t]
-        edge = self.edges[t]
-        self.optimizer.zero_grad()
-        feat_dense = feat.to_dense()
-        norm = torch.unsqueeze(torch.norm(feat_dense,p=2,dim=1),1)
 
-        #norm = feat.norm(dim=1)[:, None] + 1e-8
-        feat_norm = feat_dense.div(norm+1e-10)
 
-        del feat_dense
-        gc.collect()
-        feat_norm = feat_norm.to_sparse()
 
-        print("fn",feat_norm,edge)
-        sim = torch.sparse.mm(feat_norm,feat_norm.transpose(0,1))
+
+    def optimize_sparse(self, t: int):
+
+        next_feature = self.feats[t] 
+    
+        next_action = self.edges[t]
         
 
+        #simlalityを計算
+        normed_next_feature = norm_func(next_feature) #単位ベクトルに変更する
+        similality_coo = adj_sim(next_action,normed_next_feature)
+        reward_sim = torch.sparse.mm(similality_coo,self.model.alpha).to_sparse().coalesce()
 
-        #dot_product = torch.matmul(feat_norm, torch.t(feat_norm)).to(device)
-        #sim = torch.mul(edge, dot_product)
-        #sim = torch.mul(sim, self.model.alpha)
-        #sim = torch.add(sim, 0.001)
-        #costs = torch.mul(edge, self.model.beta)
-        #costs = torch.add(costs, 0.001)
-        #reward = torch.sub(sim, costs)
-        #adj_feat = torch.sparse.mm(edge,feat_norm)
-     
-        #sim = torch.sparse.mm(adj_feat,feat_norm.transpose(0,1))
-        sim = sim.multiply(edge)
+        #costの計算
+        reward_costs = torch.sparse.mm(next_action,self.model.beta).to_sparse().coalesce()
 
-        print("sim",sim,torch.sum(sim))
-        print(sim.size())
-        print(self.model.alpha.size())
-        sim = torch.sparse.mm(sim, self.model.alpha).to_sparse()
-        #print(sim)
-        costs = torch.sparse.mm(edge,self.model.beta).to_sparse()
-        #print("c",costs)
-        reward = torch.sum(torch.sub(sim, costs))
-        #print("BEtr",reward.sum())
-   
+        #t=0ではimpact計算不可能
+        reward = reward_sim - reward_costs
 
-       
-
-        #if t > 0:
-        #    trend = (torch.sum(self.feats[t-1],dim=0)>0).repeat(500,1)
-        #    trend = torch.where(trend>0,1,0)
-            #trend = torch.sum(self.feats[t-1],dim=0).repeat(500,1)
-        #    trend =  (trend - self.feats[t])/len(self.feats[0][0])
-            #trend =  (trend - self.feats[t])
-    
-
-        #    impact = (trend*self.model.gamma.view(500,-1)).sum()
-
-    
-                
-
+        #impactの計算
         if t > 0:
 
-            new_feature = torch.sparse.mm(self.edges[t],self.feats[t])
-            new_feature = torch.sparse.mm(new_feature,new_feature.t())
-            old_feature = torch.sparse.mm(self.edges[t-1], self.feats[t-1])
-            old_feature = torch.sparse.mm(old_feature,old_feature.t())
-
-            
-
-            sub = torch.sub(old_feature,new_feature).abs()
-            #print("nosb",torch.sum(old_feature - new_feature))
-            sub = torch.sum(sub,dim=1,keepdim=True)
-            #print("sub",torch.sum(sub))
-            #print(new_feature)
-            #print(old_feature)
-            #print("s",sub,data.feature[0].size()[1])
-            sub = sub/data.feature[0].size()[1]
-            #print("scalesub",torch.sum(sub))
-            #print(sub.size(),self.model.gamma.size())
-            #print("tr",torch.sum(torch.sparse.mm(sub.t(),self.model.gamma)))
-            reward += torch.sum(
-                #self.model.gamma/torch.sqrt(torch.sum(torch.abs(new_feature - old_feature)**2))
-                torch.sparse.mm(sub.t(),self.model.gamma)
-                #self.model.gamma/(torch.sqrt(torch.abs(new_feature - old_feature)+1e-4)**2)
-            )
+            #impactを計算:(L2ノルム)^2
+            old_feature = self.feats[t-1] 
+            new_feature = self.feats[t] 
+            diff_feature = torch.sub(old_feature,new_feature) #属性値の差を求める
+            impact_coo = adj_sim(next_action,diff_feature) 
+            impact_norm = impact_coo/data.feature[0].size()[1]
+            reward_impact = torch.sparse.mm(impact_norm,self.model.gamma).to_sparse().coalesce()
+             
+            reward += reward_impact
 
         #    print(torch.abs(new_feature - old_feature)+1e-4)
         
-        print("rs",reward)
-  
-        loss = -reward
+       
+        loss = - reward.sum()
+        self.optimizer.zero_grad()
         loss.backward()
-        del loss
-      
         self.optimizer.step()
 
        
@@ -153,7 +197,7 @@ class Optimizer:
 
 if __name__ == "__main__":
     start = time.perf_counter()
-    data_name = "Twitter"
+    data_name = "DBLP"
 
     data = init_real_data(data_name)
     data_size = data.adj[0].size()[0]
@@ -172,9 +216,16 @@ if __name__ == "__main__":
     optimizer = Optimizer(data.adj, data.feature, model, data_size)
     data_type = "complete"
 
+
+    print(len(data.feature),len(data.feature[0]))
     for t in range(5):
-        
-        optimizer.optimize(t)
+        #if data_name == "NIPS":
+       #     optimizer.optimize(t)
+        #else:
+        #    optimizer.optimize_sparse(t)
+        optimizer.optimize_sparse(t)
+
+
         optimizer.export_param(data_type,data_name)
     end = time.perf_counter()
     print((end-start)/60)

@@ -10,6 +10,10 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from sklearn.metrics import precision_recall_curve, auc
 import matplotlib.pyplot as plt
+from scipy.sparse import csc_matrix
+
+
+
 
 # First Party Library
 import csv
@@ -19,7 +23,10 @@ from init_real_data import init_real_data
 import time
 
 #another file
-from actor_sparse import Actor
+from actor_review import Actor
+
+torch.autograd.set_detect_anomaly(True)
+
 
 
 device = config.select_device
@@ -39,189 +46,207 @@ class PPO:
         self.count = 0
         self.actor = Actor(T,e,r,w,rik,self.agent_num,temperature)
         self.new_actor = Actor(T,e,r,w,rik,self.agent_num,temperature)
+        self.update_actor = Actor(T,e,r,w,rik,self.agent_num,temperature)
         #adamにモデルを登録
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr) 
-        self.new_actor_optimizer = torch.optim.Adam(self.new_actor.parameters(), lr=lr) 
+        self.new_actor_optimizer = torch.optim.Adam(self.new_actor.parameters(), lr=lr)
+
 
     #@profile
-    def get_actions(self, edges,feat,time,action_dim,feat_size):
-        """ 行動確率と属性値を計算する
-        Input:エッジ,属性値
-        Output:
-            prob エッジ方策確率
-            feat 属性値
-        """
-        prob,edge,feat = self.actor.predict(feat,edges,time,action_dim,feat_size)
+    def get_actions(self, edges, two_hop_neighbar, feat,time,action_dim,feat_size):
+        prob,edge,feat = self.actor.get_action(feat,edges,two_hop_neighbar,time,action_dim,feat_size)
         return prob,edge,feat
     
     
 
     #@profile
     def train(self, gamma, action_dim, feat_size, prob_sparse_memory, edge_sparse_memory,
-            feat_sparse_memory, reward_memory):
-        a = time.time()
+        feat_sparse_memory, reward_memory):
+
         cliprange = 0.2
         storycount = self.story_count
 
-        with torch.no_grad():
+        #方策関数の更新
+
+        G_r = [None]*len(reward_memory)
+        G_r[-1] = reward_memory[-1].detach().clone()
+        for r in range(len(reward_memory) - 2, -1, -1):
+            G_r[r] = gamma * G_r[r + 1] + reward_memory[r].detach().clone()
+
+
+        loss = 0
+        for i in range(storycount):
+            old_policy = prob_sparse_memory[i].detach().clone() 
+            new_policy,b,c,d,e= self.new_actor.train(feat_sparse_memory[i], edge_sparse_memory[i], i, action_dim, feat_size)
+
+            # インデックスの結合と重複除去
+            combined_indices = torch.cat([old_policy.indices(), new_policy.indices()], dim=1)
+            unique_indices, inverse_indices = torch.unique(combined_indices.t(), dim=0, return_inverse=True)
+            unique_indices = unique_indices.t()
+
+            # 値の計算とクリッピング
+            old_values = torch.zeros(unique_indices.size(1), device=old_policy.device)
+            new_values = torch.zeros(unique_indices.size(1), device=new_policy.device)
+
+            old_mask = inverse_indices[:old_policy.values().size(0)]
+            new_mask = inverse_indices[old_policy.values().size(0):]
+
+            # クリッピングを適用
+            old_log_values = torch.log(torch.clamp(old_policy.values(), min=1e-10, max=1.0))
+            new_log_values = torch.log(torch.clamp(new_policy.values(), min=1e-10, max=1.0))
+
+            old_values[old_mask] = old_log_values
+            new_values[new_mask] = new_log_values
+
+            # ratio計算とクリッピング
+            ratio = torch.exp(torch.clamp(new_values - old_values, min=-5.0, max=5.0))
+            ratio = torch.clamp(ratio, min=1-cliprange, max=1+cliprange).detach().clone()
+
+            # スパーステンソルの作成
+            ratio_tensor = torch.sparse_coo_tensor(
+                unique_indices,
+                ratio,
+                old_policy.size()
+            ).coalesce()
+
+            # 報酬の計算
+            G = G_r[i]
+            reward = ratio_tensor.multiply(G)
+
+            # 損失の計算
+            filtered_policy = new_policy.coalesce()
+            policy_values = torch.log(torch.clamp(filtered_policy.values().requires_grad_(True), min=1e-10))
+            policy_tensor = torch.sparse_coo_tensor(
+                filtered_policy.indices(),
+                policy_values,
+                filtered_policy.size(),
+                requires_grad=True
+            )
             
-            #G_r = torch.zeros_like(torch.stack(reward_memory))
-            G_r = [None]*len(reward_memory)
-    
-            print(reward_memory[-1])
-            G_r[-1] = reward_memory[-1]
-    
+            #loss -= torch.sparse.sum(policy_tensor * reward)
+            loss -= torch.sum(policy_tensor)
 
-            # 収益の計算
-            for r in range(len(reward_memory) - 2, -1, -1):
-                G_r[r] = gamma * G_r[r + 1] + reward_memory[r]
+        # 勾配の計算と適用
+
+        print("Loss requires grad:", loss.requires_grad)
+    
+        self.new_actor_optimizer.zero_grad()
+
+        print("new_policy.requires_grad",new_policy.requires_grad)
+        print("policy_tensor.requires_grad",policy_tensor.requires_grad)
+
+        print("b",b.grad_fn,b.grad,b.is_leaf)
+        print("c",c.grad_fn,c.grad,c.is_leaf)
+        print("d",d.grad_fn,d.grad,d.is_leaf)
+        print("e",e.grad_fn,e.grad,e.is_leaf)
+   
+  
+       
+        # 計算
+        try:
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.new_actor.parameters(), max_norm=1.0)
             
-            # baselineの作成
-            #baseline = torch.cumsum(reward_memory,dim=0)/torch.arange(1, len(reward_memory) + 1, 1)
+            
+        except RuntimeError as e:
+            print("エラー:", e)
 
-        # メインループ
-        for epoch in range(2):
-            loss = 0
-            for i in range(storycount):
-                old_policy = prob_sparse_memory[i].detach().clone() 
-                new_policy = self.new_actor.forward(feat_sparse_memory[i], edge_sparse_memory[i], i, action_dim, feat_size)
+        # 勾配をチェック
+        for name, param in self.new_actor.named_parameters():
+            if param.grad is not None:
+                print(f"Gradient for {name}:", param.grad,param.grad_fn,param.is_leaf)
+            else:
+                print(f"No gradient for {name}",param.grad,param.grad_fn,param.is_leaf)
 
-                # ratio計算
-                #ratio = torch.exp(torch.log(new_policy.to_dense() + 1e-10) - torch.log(old_policy.to_dense() + 1e-10))
-                old_log = torch.log(old_policy.values()+1e-10)
-                old_ration_log = torch.sparse_coo_tensor(old_policy.indices(),old_log,old_policy.size()).coalesce()
-                new_log = torch.log(new_policy.values()+1e-10)
-                new_ration_log = torch.sparse_coo_tensor(new_policy.indices(),new_log,new_policy.size()).coalesce()
-                ratio = torch.exp(new_ration_log.values() - old_ration_log.values())
-                print(ratio.sum())
+        self.new_actor_optimizer.step()
 
-                new_ration_log_indices = new_ration_log.indices()
-                old_ration_log_indices = old_ration_log.indices()
-                new_indices = torch.cat([new_ration_log_indices, old_ration_log_indices], dim=1)
-                
-                non_zero_indices = ratio.nonzero(as_tuple=True)[0]  # 0以外の値のインデックス
-                filtered_indices = new_indices[:, non_zero_indices]  # 0でないインデックスのみ
-                filtered_values = ratio[non_zero_indices]  # 0でない値のみ 
-                ratio = torch.sparse_coo_tensor(filtered_indices,filtered_values,new_ration_log.size()).coalesce()
+        return self.new_actor.T.clone().detach(), self.new_actor.e.clone().detach(), \
+            self.new_actor.r.clone().detach(), self.new_actor.W.clone().detach()
+    
+    def update_reward(self,obs,T,e,r,w,mixture_ration,temperature,action_dim,feat_size,edge,feat):
 
-
-                ratio_clipped = torch.clamp(ratio.to_dense(), 1 - cliprange, 1 + cliprange)
-
-                #G = G_r[i] - baseline[i]
-                G = G_r[i] 
-
-                # 報酬計算
-                print(G.size())
-                print(ratio.to_sparse().size())
-                reward_unclipped = ratio.to_sparse().multiply(G)
-                #reward_clipped = ratio_clipped.to_sparse() * G
-                #reward = torch.min(reward_clipped.to_dense(),reward_unclipped.to_dense())
+        _, _ = obs.reset(edge, feat,mixture_ration)
         
-                # 新しいポリシーの損失計算
-                reward = reward_unclipped
-                print(torch.sum(new_policy))
-                non_zero_indices = new_policy.values().nonzero(as_tuple=True)[0]  # 0以外の値のインデックス
-                filtered_indices = new_policy.indices()[:, non_zero_indices]  # 0でないインデックスのみ
-                filtered_values = new_policy.values()[non_zero_indices]  # 0でない値のみ 
-                new_policy = torch.sparse_coo_tensor(filtered_indices,filtered_values,new_policy.size()).coalesce()
+        for time in range(5):
 
-                policy_values = torch.log(new_policy.values())
-                print(torch.sum(policy_values))
-                new_policy_coo = torch.sparse_coo_tensor(new_policy.indices(), policy_values, new_policy.size())
-                print(torch.sparse.sum(new_policy_coo))
-                loss -= torch.sparse.sum(new_policy_coo * reward)
+            self.update_actor = Actor(T,e,r,w,mixture_ration,self.agent_num,temperature)
+            edge,two_hop_neighbar,feature = obs.state()
+            edge_probs,edge_action,feat_action = self.update_actor.get_action(feature,edge,two_hop_neighbar,time,action_dim,feat_size)
+            if time == 0:
+                alpha_all,beta_all,gamma_all = obs.update_reward(feat_action.coalesce(),edge_action.coalesce(),time)
+            else:
+                alpha_all,beta_all,gamma_all = obs.update_reward(feat_action.coalesce(),edge_action.coalesce(),time,alpha_all,beta_all,gamma_all)
 
-                # メモリ解放
-                del old_policy, new_policy, ratio, ratio_clipped, reward_unclipped,  reward, G
-                torch.cuda.empty_cache() if torch.cuda.is_available() else gc.collect()
-
-            # 勾配の適用
-            self.new_actor_optimizer.zero_grad()
-            loss.backward(retain_graph=True)  # retain_graph=False でグラフを保持しない
-            torch.nn.utils.clip_grad_norm_(self.new_actor.parameters(), 5)
-            self.new_actor_optimizer.step()
-
-            # 勾配情報のログ出力
-            for name, param in self.new_actor.named_parameters():
-                if param.grad is not None:
-                    print(f"{epoch}:{name} grad: {param.grad}")
-                else:
-                    print(f"{epoch}:{name} grad is None")
-
-            print("update", self.new_actor.T, self.new_actor.e, self.new_actor.r, self.new_actor.W)
-
-        # パラメータのコピーとメモリ解放
-        T, e, r, w = self.new_actor.T.clone().detach(), self.new_actor.e.clone().detach(), self.new_actor.r.clone().detach(), self.new_actor.W.clone().detach()
-
-        # 不要な変数の削除
-        del G_r, loss, self.new_actor, self.new_actor_optimizer, self.actor
-        torch.cuda.empty_cache() if torch.cuda.is_available() else gc.collect()
-
-        b = time.time()
-        print("train",b-a)
-
-        return T, e, r, w
-
+        return obs.alpha,obs.beta,obs.gamma
+        
     
 #@profile
-def e_step(agent_num,edge,feat,T,e,r,w,persona,step,temperature,sparse_size):
-    a = time.time()
-    #csr
-    actor = Actor(T,e,r,w,persona,agent_num,temperature)
-    #5,5 sparse tensorが入っている
+def init_mixing_param(K):
+    """混合率の初期化"""
+    return np.random.dirichlet([1] * K)
 
-    policy_prob = actor.calc_ration(
-                feat,
-                edge,
-                persona,
-                sparse_size
-                )
+
+def calc_gaussian_prob(x, mean, sigma):
+    """多次元ガウス分布の確率を計算"""
+    d = x - mean
+    sigma += np.eye(sigma.shape[0]) * 1e-5  # 数値安定性
+    det = np.linalg.det(sigma)
+    inv_sigma = np.linalg.inv(sigma)
+    exp_term = -0.5 * (d @ inv_sigma @ d.T).item()
+    return np.exp(exp_term) / np.sqrt((2 * np.pi) ** sigma.shape[0] * det)
+
+
+def calc_likelihood(X, means, sigmas, pi, K):
+    """データXの現在のパラメタにおける対数尤度を計算"""
+    likelihood = 0.0
+    for n in X:
+        temp = sum(pi[k] * calc_gaussian_prob(n, means[k], sigmas[k]) for k in range(K))
+        likelihood += np.log(temp)
+    return likelihood
+
+
+def e_step(N, K, X, means, sigmas,pi):
+    # E-Step
+    gamma = np.zeros((N, K))
+    for n, x in enumerate(X):
+        denominator = sum(pi[k] * calc_gaussian_prob(x, means[k], sigmas[k]) for k in range(K))
+        gamma[n] = [pi[k] * calc_gaussian_prob(x, means[k], sigmas[k]) / denominator for k in range(K)]
+
+    return gamma
+
+def m_step(X,gamma,K):
+    # M-Step
+    Nks = gamma.sum(axis=0)
+    pi = init_mixing_param(K)
+    #k:ペルスナ
+    for k in range(K):
+        pi[k] = Nks[k] / N #混合比の計算
+        means[k] = np.sum(gamma[:, k, np.newaxis] * X, axis=0) / Nks[k]
+        diff = X - means[k]
+        sigmas[k] = (gamma[:, k] * diff.T @ diff) / Nks[k]
     
+    return pi, means ,sigmas
 
 
 
-    #分子　全ての時間　 あるペルソナに注目
-    rik = torch.empty(step,agent_num,len(persona[0][0]))
-    ration = torch.empty(step,len(persona[0][0]),agent_num)
+def em_algorithm(alpha,beta,gamma,means,sigmas,mixture_ration):
+    """EMアルゴリズム"""
+    data = pd.DataFrame({"alpha": alpha, "beta": beta, "gamma": gamma})
+    norm_data = StandardScaler().fit_transform(data)
+    norm_df = pd.DataFrame(norm_data, columns=["alpha", "beta", "gamma"])
 
-    #分母 top時間に縮約、bottom:ペルソナについて縮約 5,4,32,32 ->5,1,32,32
-    top = policy_prob
-    bottom_sum = []
-    for row in policy_prob:
-        bottom_tensor = row[0]
-        for tensor in row[1:]:
-            bottom_tensor = bottom_tensor + tensor
-        bottom_sum.append(bottom_tensor)
+    K = len(alpha)
+    pi = mixture_ration
+    #M-step
+    #pi, means ,sigmas = m_step(X,pi,K)
 
-    
-    # ration 5,4,32,32
-    for j in range(5):
-        for k in range(len(persona[0][0])):
-            ration[j][k] = (torch.sum(top[j][k].to_dense(),dim=-1)/torch.sum((bottom_sum[k].to_dense()),dim=-1))
+    #E-step
 
-    #ration = top/(bottom_sum)
+    rik = e_step(N, K, X, means, sigmas,pi)
 
-
-    #ration = torch.div(top,bottom)
-    # ぎょう方向に縮約
-    #print("行動単位のration",ration
-    #5,4,32,32 -> 5,4,32,1
-    #ration = torch.mean(ration,dim=3)
-
-
-    for m in range(step):
-        for n in range(agent_num):
-            for l in range(len(persona[0][0])):
-                original = ration[m,l,n]
-                rik[m,n,l] = original.detach()
-    
-
-    del actor,policy_prob,top,ration,original
-    gc.collect()
-    b = time.time()
-    print("e-step",b-a)
     return rik
-    
+
+
 
 #@profile
 def show():
@@ -282,15 +307,19 @@ def execute_data(persona_num,data_name,data_type):
     means = means.astype("float32")
     means = torch.from_numpy(means).to(device)
 
+    path = path_n+"persona={}/sigma.npy".format(int(persona_num))
+    sigmas = np.load(path)
+    sigmas = sigmas.astype("float32")
+    sigmas = torch.from_numpy(sigmas).to(device)
+
     #重み(固定値)
     alpha = means[:,0]
     beta = means[:,1]
     gamma = means[:,2]
     
-    print("load",load_data.adj)
-    print("load",load_data.feature)
-
+    print("load",load_data.adj,load_data.feature)
     print("means",means)
+    print("sigmas",sigmas)
     print("alpha",alpha)
     print("beta",beta)
     print("gamma",gamma)
@@ -319,8 +348,8 @@ def execute_data(persona_num,data_name,data_type):
         mu = 0.01
         lr = 0.00001
         temperature = 0.01
-        T = torch.tensor([0.70 for _ in range(persona_num)], dtype=torch.float32)
-        e = torch.tensor([0.1 for _ in range(persona_num)], dtype=torch.float32)
+        T = torch.tensor([1.50 for _ in range(persona_num)], dtype=torch.float32)
+        e = torch.tensor([1.00 for _ in range(persona_num)], dtype=torch.float32)
         r = torch.tensor([0.80 for _ in range(persona_num)], dtype=torch.float32)
         w = torch.tensor([0.80 for _ in range(persona_num)], dtype=torch.float32)
 
@@ -334,6 +363,7 @@ def execute_data(persona_num,data_name,data_type):
     while flag and ln_sub <= 1:
         
         print("----------episode:{}----------".format(episode))
+        print("pe",persona_ration)
 
         # E-step
         #mixture_ratio:混合比率
@@ -342,19 +372,7 @@ def execute_data(persona_num,data_name,data_type):
             mixture_ratio = persona_ration
        
         else:
-            new_mixture_ratio = e_step(
-                agent_num=agent_num,
-                edge = edge_sparse[LEARNED_TIME],
-                feat = feat_sparse[LEARNED_TIME],
-                T=T,
-                e=e,
-                r=r,
-                w=w,
-                persona=persona_ration,
-                step = story_count,
-                temperature=temperature,
-                sparse_size = feat_size
-                )
+            new_mixture_ratio = em_algorithm(alpha,beta,gamma,means,sigmas,mixture_ratio)
      
                       
             # スムージングファクター
@@ -373,52 +391,45 @@ def execute_data(persona_num,data_name,data_type):
                     #環境の設定
         obs = Env(
             agent_num=agent_num,
-            edge = edge_sparse[LEARNED_TIME].clone(),
-            feature = feat_sparse[LEARNED_TIME].clone(),
+            edge = edge_sparse[LEARNED_TIME],
+            feature = feat_sparse[LEARNED_TIME],
             alpha=alpha,
             beta=beta,
             gamma=gamma,
             persona=mixture_ratio
         )
-        print("ちん",edge_sparse[LEARNED_TIME].size())
-        print(feat_sparse[LEARNED_TIME].size())
-        print(mixture_ratio.size())
+        print("エッジ",edge_sparse[LEARNED_TIME].size())
+        print("属性値",feat_sparse[LEARNED_TIME].size())
+        print("ペルソナ",mixture_ratio.size())
 
-        #else:
-        #    obs.reset(
-        #            load_data.adj[LEARNED_TIME].clone(),
-        #            load_data.feature[LEARNED_TIME].clone(),
-        #            persona=mixture_ratio
-        #            )
-            
         
         agents = PPO(obs,agent_num, input_size, action_dim,lr, mu,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
         episode_reward = 0
-        print("persona_ration",mixture_ratio)
         prob_sparse_memory = []
-        #next_edge_sparse_memory = []
-        #next_feat_sparse_memory = []
         edge_sparse_memory = []
         feat_sparse_memory = []
         reward_memory = []
         edge_sparse_memory.append(edge_sparse[LEARNED_TIME].clone())
         feat_sparse_memory.append(feat_sparse[LEARNED_TIME].clone())
+        print("エッジ",edge_sparse[LEARNED_TIME].size())
+        print("属性値",feat_sparse[LEARNED_TIME].size())
+        print("ペルソナ",mixture_ratio.size())
 
+        #時間をすすめる
         for time in range(story_count):
-
-            edge,feature = obs.state()
-    
-            #edge_probs COO
-            print("before get actions")
-            edge_probs,edge_action,feat_action= agents.get_actions(edge,feature,time,action_dim,feat_size)
+            #状態を取得
+            edge,two_hop_neighbar,feature = obs.state()
+  
+            #行動を獲得
+            edge_probs,edge_action,feat_action= agents.get_actions(edge,two_hop_neighbar,feature,time,action_dim,feat_size)
+            
             print("done get actions")
 
             #属性値を確率分布の出力と考えているので、ベルヌーイ分布で値予測
     
-            reward = obs.step(feat_action,edge_action,time)
+            reward = obs.step(feat_action.coalesce(),edge_action.coalesce(),time)
             print("done reward")
-            print(reward.size())
-
+   
             #agents.memory.probs[time]=edge_probs.clone()
             prob_sparse_memory.append(edge_probs.clone())
 
@@ -426,9 +437,6 @@ def execute_data(persona_num,data_name,data_type):
             edge_sparse_memory.append(edge_action.clone())
             #agents.memory.features[time] = feature.clone()
             feat_sparse_memory.append(feat_action.clone())
-
-            #print("pred_feat",torch.sum(feat_action))
-            #print("pred_edge",torch.sum(edge_action))
 
             #agents.memory.next_edges[time]=edge_action.clone()
             #next_edge_sparse_memory.apeend(edge_action.clone())
@@ -444,18 +452,15 @@ def execute_data(persona_num,data_name,data_type):
 
         episodes_reward.append(episode_reward)
         print(reward_memory)
-        #print("epsiode_rewaerd",episodes_reward[-1])
-        print("go train")
-        T,e,r,w= agents.train(mu,action_dim,feat_size,prob_sparse_memory,edge_sparse_memory,
-                              feat_sparse_memory,reward_memory)
-        print("done train")
+
+        T,e,r,w= agents.train(mu,action_dim,feat_size,prob_sparse_memory,edge_sparse_memory,feat_sparse_memory,reward_memory)
+        print("Updated Policy")
+
+        alpha,beta,gamma = agents.update_reward(obs,T,e,r,w,mixture_ratio,temperature,action_dim,feat_size,edge_sparse[LEARNED_TIME],feat_sparse[LEARNED_TIME])
+
+        print("Updated Reward")
         
-
-
-        #print("persona_ration",mixture_ratio)
-
-
-        #ln_before = ln
+        #ln_before = lx
         #ln = agents.ln
         #ln_sub =abs(ln-ln_before)
         episode += 1
@@ -526,15 +531,20 @@ def execute_data(persona_num,data_name,data_type):
    
         for test_time in range(TOTAL_TIME - GENERATE_TIME):
 
-            edges, feature = obs.state()
-            edge_action,edge_prob ,feat_prob ,feat_action = agents.actor.test(edges,feature,test_time,action_dim,feat_size)
+            edges, two_hop_neighbar,feature = obs.state()
+            edge_action,edge_prob ,feat_prob ,feat_action = agents.actor.get_action(feature,edges,two_hop_neighbar,test_time,action_dim,feat_size)
             reward = obs.step(feat_action,edge_action,test_time)
             
 
             #属性値の評価 
             pred_prob = torch.ravel(feat_prob.to_dense()).to("cpu")
             pred_prob = pred_prob.to("cpu").detach().numpy()
-            dense_array = np.array(load_data.feature[GENERATE_TIME + test_time].todense())
+            print(type(load_data.feature[GENERATE_TIME + test_time]))
+
+            if isinstance(load_data.feature[GENERATE_TIME + test_time],csc_matrix):
+                dense_array = np.array(load_data.feature[GENERATE_TIME + test_time].todense())
+            else:
+                dense_array = np.array(load_data.feature[GENERATE_TIME + test_time].to_dense())
             attr_tensor = torch.from_numpy(dense_array)
 
             detach_attr = (
@@ -593,7 +603,10 @@ def execute_data(persona_num,data_name,data_type):
             edge_predict_probs = np.concatenate([target_prob], 0)
             
             #テストデータ
-            dense_array = np.array(load_data.adj[GENERATE_TIME + test_time].to_dense())
+            if isinstance(load_data.adj[GENERATE_TIME + test_time],csc_matrix):   
+                dense_array = np.array(load_data.adj[GENERATE_TIME + test_time].todense())
+            else:
+                dense_array = np.array(load_data.adj[GENERATE_TIME + test_time].to_dense())
             edge_tensor = torch.from_numpy(dense_array)
             detach_edge = (
                 torch.ravel(edge_tensor)
@@ -648,6 +661,6 @@ if __name__ == "__main__":
     #[4,8,12,16]
     s = time.time()
     for i in [5]:
-        execute_data(i,"Twitter","complete")
+        execute_data(i,"DBLP","complete")
     e = time.time()
     print("time:",s-e)
