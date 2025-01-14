@@ -4,6 +4,8 @@ import math
 # Third Party Library
 import networkx as nx
 import torch.nn as nn
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
 from torchviz import make_dot
 
 
@@ -13,12 +15,13 @@ import torch
 
 # First Party Library
 import config
-
 device = config.select_device
 
-"""2hop先の隣接行列の対角成分を取り除く"""
-def remove_diagonal(data):
 
+
+
+def remove_diagonal(data):
+    """2hop先の隣接行列の対角成分を取り除く"""
     filtered_indices = data.indices()
     filtered_values = data.values()
     mask = filtered_indices[0] != filtered_indices[1]  # 行番号と列番号が異なる要素だけを選択
@@ -32,14 +35,16 @@ def remove_diagonal(data):
 
 
 def norm_func(x):
+    """スパーステンソルのL2ノルムで正規化."""
+    x = x.coalesce()
     x_indices = x.indices()
-    x_values = x.values().requires_grad_(True)
+    x_values = x.values()
     x_size = x.size()
     x_row_indices = x_indices[0]            # 行インデックス
     x_squared_values = x_values ** 2                # 各値の平方
     
     # in-place操作を避けるため、新しいテンソルを作��
-    x_row_sums = torch.zeros(x_size[0], requires_grad=True)
+    x_row_sums = torch.zeros(x_size[0])
     x_row_sums = x_row_sums.scatter_add(0, x_row_indices, x_squared_values)  # in-place操作を避ける
     
     x_l2_norms = torch.sqrt(x_row_sums)                # 平方根を取る
@@ -49,95 +54,49 @@ def norm_func(x):
     normalized_x_feat = torch.sparse_coo_tensor(
         x_indices, 
         x_normalized_values, 
-        x_size,
-        requires_grad=True
+        x_size
     ).coalesce()
 
     return normalized_x_feat
 
 
 
-"""隣接行列の類似度計算"""
-def adj_sim1(adj, feat):
-    # 隣接行列
-    A_sparse = adj.coalesce()
-    row_indices, col_indices = A_sparse.indices()
-    values_A = A_sparse.values()
-    
-    # 属性値行列
-    B_sparse = feat.coalesce()
-    B_indices = B_sparse.indices()
-    B_values = B_sparse.values()
 
-    # 非ゼロインデックスに対応する行列積を計算
-    result_indices = []
-    result_values = []
 
-    for i, j in zip(row_indices, col_indices):
-        # B の行要素と列要素を取得
-        row_mask = B_indices[0] == i.item()
-        col_mask = B_indices[0] == j.item()
-        
-        row_b = B_values[row_mask]
-        col_b = B_values[col_mask]
-
-        # 行要素と列要素のインデックスを比較して共��部分を計算
-        if len(row_b) > 0 and len(col_b) > 0:
-            # サイズを合わせるために行列積を取る
-            row_indices_b = B_indices[1][row_mask]
-            col_indices_b = B_indices[1][col_mask]
-
-            # 共通する列要素を抽出
-            common_indices = torch.isin(row_indices_b, col_indices_b)
-            filtered_row_b = row_b[common_indices]
-
-            common_indices = torch.isin(col_indices_b, row_indices_b)
-            filtered_col_b = col_b[common_indices]
-
-            # 要素が一致した場合のみ積を計算
-            if len(filtered_row_b) > 0 and len(filtered_col_b) > 0:
-                result_indices.append([i.item(), j.item()])
-                result_values.append(torch.sum(filtered_row_b * filtered_col_b).item())
-
-    # スパース結果を作成
-    result_indices = torch.tensor(result_indices, dtype=torch.long).t()  # 転置して形状を整える
-    result_values = torch.tensor(result_values, dtype=torch.float32)
-    result_sparse = torch.sparse_coo_tensor(
-        result_indices,
-        result_values.requires_grad_(True),
-        size=adj.size(),
-        requires_grad=True
-    )
-
-    return result_sparse
 
 def sparse_hadamard_product(adj, similarity):
     """
     スパーステンソルのアダマール積を計算。共通インデックスのみを効率的に扱う。
     """
-    # インデックスと値を取得
-    indices_a, values_a = adj._indices(), adj._values()
-    indices_b, values_b = similarity._indices(), similarity._values()
+    # スパーステンソルを圧縮
+    adj = adj.coalesce()
+    similarity = similarity.coalesce()
 
-    # インデックスをキーとして辞書を作成
-    index_map_a = {tuple(idx.tolist()): i for i, idx in enumerate(indices_a.t())}
-    index_map_b = {tuple(idx.tolist()): i for i, idx in enumerate(indices_b.t())}
+    # 非ゼロ要素のインデックスと値を取得
+    indices_a, values_a = adj.indices(), adj.values()
+    indices_b, values_b = similarity.indices(), similarity.values()
+
+    # (行, 列) を結合してユニークなキーとして扱う
+    indices_a_flat = indices_a[0] * adj.size(1) + indices_a[1]
+    indices_b_flat = indices_b[0] * similarity.size(1) + indices_b[1]
 
     # 共通インデックスを特定
-    common_keys = set(index_map_a.keys()).intersection(index_map_b.keys())
+    common_mask = torch.isin(indices_a_flat, indices_b_flat)
 
-    # 共通インデックスの値を計算
-    common_indices = torch.tensor(list(common_keys), dtype=torch.long).t()
-    common_values = torch.tensor(
-        [
-            (values_a[index_map_a[key]] * values_b[index_map_b[key]]).requires_grad_(True)
-            for key in common_keys
-        ],
-        dtype=values_a.dtype,
-    )
+    # 共通インデックスに対応する値を取得
+    common_indices = indices_a[:, common_mask]
+    common_values_a = values_a[common_mask]
 
-    # 新しいスパーステンソルを作成
-    result = torch.sparse_coo_tensor(common_indices, common_values, adj.size(),requires_grad=True).coalesce()
+    # `indices_a_flat` と `indices_b_flat` の対応を見つけて、`values_b` を合わせる
+    matched_b_indices = torch.searchsorted(indices_b_flat, indices_a_flat[common_mask])
+    common_values_b = values_b[matched_b_indices]
+
+    # アダマール積（要素ごとの積）を計算
+    common_values = common_values_a * common_values_b
+
+    # スパーステンソルとして返す
+    result = torch.sparse_coo_tensor(common_indices, common_values, adj.size())
+    result = result.coalesce()
     return result
 
 
@@ -145,26 +104,34 @@ def adj_sim_self(adj, feat):
     """gammaの計算"""
     adj_sparse = adj.coalesce()
     feat_sparse = feat.coalesce()
-    neigh_feat = torch.sparse.mm(adj_sparse, feat_sparse)
-    similarity = torch.sparse.mm(neigh_feat, neigh_feat.t())
-    print("ガンマsimilarity",similarity)
+    similarity = torch.sparse.mm(feat_sparse, feat_sparse.t())
+    neigh_similarity = sparse_hadamard_product(adj_sparse, similarity.to_sparse())
 
-    return similarity
+
+    return neigh_similarity
     
 def adj_sim(adj, feat):
-    """隣接行列の類似度計算."""
+    """alphaの計算"""
     adj_sparse = adj.coalesce()
     feat_sparse = feat.coalesce()
     #L２ノルムの計算
     normalized_feat = norm_func(feat)
     #ノードの類似度の計算
     similarity = torch.sparse.mm(normalized_feat, normalized_feat.t())
-    neigh_similarity = sparse_hadamard_product(adj_sparse, similarity)
-    print("アルファsimilarity",neigh_similarity)
+    neigh_similarity = sparse_hadamard_product(adj_sparse, similarity.to_sparse())
+
 
     return neigh_similarity
 
 
+# 勾配追跡用のデバッグ出力を追加
+def debug_grad(name, tensor):
+    if tensor.requires_grad:
+        print(f"{name} arad_fn={tensor.grad_fn} , requires_grad=True")
+        if tensor.grad is not None:
+            print(f"{name} grad={tensor.grad}")
+    else:
+        print(f"{name} requires_grad=False")
 
 class Env(nn.Module):
     def __init__(self, agent_num,edge, feature,alpha,beta,gamma,persona) -> None:
@@ -192,77 +159,83 @@ class Env(nn.Module):
 
     """報酬を計算する"""
     def step(self,next_feature,next_action,time):
-        
-        persona_num = self.persona[time].size()[1]
+        with torch.no_grad():
 
-        #impactを計算:(L2ノルム)^2
-        old_feature = self.feature 
-        new_feature = next_feature 
-        diff_feature = torch.sub(old_feature,new_feature).coalesce() #属性値の差を求める
-        impact_coo = adj_sim_self(next_action,diff_feature)
-        impact_norm = impact_coo/(self.feature[0].size()[0])
-        persona_gamma = torch.mm(self.persona[time],self.gamma.view(persona_num,1)) #gammaを計算
-        reward_impact = impact_norm.multiply(persona_gamma).coalesce()
+            persona_num = self.persona[time].size()[1]
+            #impactを計算:(L2ノルム)^2
+            old_feature = self.feature 
+            new_feature = next_feature 
+            diff_feature = torch.sub(old_feature,new_feature).coalesce() #属性値の差を求める
+            impact_coo = adj_sim_self(next_action,diff_feature)
+            impact_norm = impact_coo/(self.feature[0].size()[0])
+            persona_gamma = torch.mm(self.persona[time],self.gamma.view(persona_num,1)) #gammaを計算
+            reward_impact = impact_norm.multiply(persona_gamma).coalesce()
 
-        #simlalityを計算
-        normed_next_feature = norm_func(next_feature) #単位ベクトルに変更する
-        similality_coo = adj_sim(next_action,normed_next_feature)
-        persona_alpha = torch.mm(self.persona[time],self.alpha.view(self.persona[time].size()[1],1))
-        reward_sim = similality_coo.multiply(persona_alpha).coalesce()
 
-        #costを計算
-        persona_beta = torch.mm(self.persona[time],self.beta.view(self.persona[time].size()[1],1))
-        reward_cost = self.edges.multiply(persona_beta).to_sparse().coalesce()
-        reward = reward_sim - reward_cost + reward_impact
+            #simlalityを計算
+            normed_next_feature = norm_func(next_feature) #単位ベクトルに変更する
+            similality_coo = adj_sim(next_action,normed_next_feature)
+            persona_alpha = torch.mm(self.persona[time],self.alpha.view(self.persona[time].size()[1],1))
+            reward_sim = similality_coo.multiply(persona_alpha).coalesce()
 
-        #edges,featureを更新
-        self.edges = next_action
-        self.feature = next_feature
+            #costを計算
+            persona_beta = torch.mm(self.persona[time],self.beta.view(self.persona[time].size()[1],1))
+            reward_cost = self.edges.multiply(persona_beta).to_sparse().coalesce()
+            reward = reward_sim - reward_cost + reward_impact
+
+            #edges,featureを更新
+            self.edges = next_action
+            self.feature = next_feature
 
         return reward
     
-    def update_reward(self,next_feature,one_hop_action,time,alpha_all=None,beta_all=None,gamma_all=None):
+    def update_reward(self,next_feature,one_hop_action,time,scaler,alpha_all=None,beta_all=None,gamma_all=None):
 
         if time == 0:
-            alpha_all = torch.mm(self.persona[time],self.alpha.view(-1,1)).to_sparse().clone().detach().requires_grad_(True)
-            beta_all = torch.mm(self.persona[time],self.beta.view(-1,1)).to_sparse().clone().detach().requires_grad_(True)
-            gamma_all = torch.mm(self.persona[time],self.gamma.view(-1,1)).to_sparse().clone().detach().requires_grad_(True)
+            # alpha, beta, gamma の計算と逆変換
+            alpha_all = torch.matmul(self.persona[time], self.alpha).squeeze()
+            beta_all = torch.matmul(self.persona[time], self.beta).squeeze()
+            gamma_all = torch.matmul(self.persona[time], self.gamma).squeeze()
+
+            # DataFrame 作成と逆変換
+            data = pd.DataFrame({"alpha": alpha_all.clone().detach().numpy(), "beta": beta_all.clone().detach().numpy(), "gamma": gamma_all.clone().detach().numpy()})
+            original_data = scaler.inverse_transform(data)
+
+            # PyTorch テンソルに戻し requires_grad=True を設定
+            alpha_all = torch.unsqueeze(torch.tensor(original_data[:, 0]),1).requires_grad_(True)
+            beta_all = torch.unsqueeze(torch.tensor(original_data[:, 1]),1).requires_grad_(True)
+            gamma_all = torch.unsqueeze(torch.tensor(original_data[:, 2]),1).requires_grad_(True)
+            print(alpha_all.size())
+            
         else:
             alpha_all = alpha_all.clone().detach().requires_grad_(True)
             beta_all = beta_all.clone().detach().requires_grad_(True)
             gamma_all = gamma_all.clone().detach().requires_grad_(True)
-
-        optimizer = torch.optim.Adam([alpha_all,beta_all,gamma_all],lr=0.01)
-
-
        
-        # 勾配追跡用のデバッグ出力を追加
-        def debug_grad(name, tensor):
-            if tensor.requires_grad:
-                print(f"{name} requires_grad=True")
-                if tensor.grad is not None:
-                    print(f"{name} grad={tensor.grad}")
-            else:
-                print(f"{name} requires_grad=False")
+        optimizer = torch.optim.SGD([alpha_all,beta_all,gamma_all],lr=0.001)
+
 
         # impact計算の勾配追跡
-        old_feature = self.feature.detach().clone().requires_grad_(True)
-        new_feature = next_feature.detach().clone().requires_grad_(True)
-        edge = self.edges.detach().clone().requires_grad_(True)
+        old_feature = self.feature.detach().clone()
+        new_feature = next_feature.detach().clone()
+        edge = self.edges.detach().clone()
         diff_feature = torch.sub(old_feature, new_feature)
         debug_grad("diff_feature", diff_feature)
-        
         impact_coo = adj_sim_self(one_hop_action, diff_feature).coalesce()
-
         impact_norm = impact_coo/(self.feature[0].size()[0])
-        row_indices = impact_norm.indices()[0]
-        row_values = impact_norm.values()
-        row_sum = torch.zeros(impact_norm.size()[0]).scatter_add_(0, row_indices, row_values)
-        impact_norm_sum = torch.sparse_coo_tensor(impact_norm.indices(),row_sum,impact_norm.size())
-        print("impact_norm",impact_norm.size())
-        print("gamma_all",gamma_all.size())
+
+        #node x 属性値数 → node x 1にして、alpha,betaのnxnにたす
+        #nnzの行番号を求める
+        #row_indices = impact_norm.indices()[0]
+        #row_values = impact_norm.values()
+
+        #tow_indicesの値を使って,行方向に足し合わせる(node x 1)
         
-        reward_impact = impact_norm_sum.multiply(gamma_all).coalesce()
+        #row_sum = torch.zeros(impact_norm.size()[0]).scatter_add(0, row_indices, row_values)
+        #impact_norm_sum = torch.sparse_coo_tensor(impact_norm.indices(),row_sum,impact_norm.size())
+  
+
+        reward_impact = impact_norm.multiply(gamma_all).coalesce()
         debug_grad("reward_impact", reward_impact)
 
         # similarity計算の勾配追跡
@@ -279,13 +252,19 @@ class Env(nn.Module):
         reward = reward_sim - reward_cost + reward_impact
         debug_grad("reward", reward)
 
-        reward_loss = torch.sum(reward)
+        reward_loss = torch.sparse.sum(reward)
+
         debug_grad("reward_loss", reward_loss)
 
         optimizer.zero_grad()
         reward_loss.backward()
         optimizer.step()
-        print("alpha,beta,gamma_grad",alpha_all.grad[10],beta_all.grad[10],gamma_all.grad[10])
+    
+        # 勾配をチェック
+        for param_group in optimizer.param_groups:
+            for param in param_group['params']:
+                print(f"パラメータ: {param[:10]}")
+                print(f"勾配: {param.grad.coalesce().values()[:10]}")
 
         return alpha_all,beta_all,gamma_all
 

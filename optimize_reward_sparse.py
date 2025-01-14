@@ -197,7 +197,7 @@ class Optimizer:
 
 if __name__ == "__main__":
     start = time.perf_counter()
-    data_name = "DBLP"
+    data_name = "Twitter"
 
     data = init_real_data(data_name)
     data_size = data.adj[0].size()[0]

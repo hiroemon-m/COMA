@@ -1,5 +1,6 @@
 # Standard Library
 import gc
+import joblib
 
 # Third Party Library
 
@@ -9,9 +10,10 @@ import torch.nn as nn
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from sklearn.metrics import precision_recall_curve, auc
+from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 from scipy.sparse import csc_matrix
-
+import pandas as pd
 
 
 
@@ -30,6 +32,8 @@ torch.autograd.set_detect_anomaly(True)
 
 
 device = config.select_device
+
+
 
 class PPO:
     def __init__(self, obs,agent_num,input_size, action_dim, lr, gamma,T,e,r,w,rik,temperature,story_count,data_set):
@@ -50,6 +54,19 @@ class PPO:
         #adamにモデルを登録
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr) 
         self.new_actor_optimizer = torch.optim.Adam(self.new_actor.parameters(), lr=lr)
+
+    def sparse_clip_grad_norm_(self,parameters, max_norm):
+        for param in parameters:
+            if param.grad is not None and param.grad.is_sparse:
+                # スパーステンソルの非ゼロ値を取得
+                grad_values = param.grad.coalesce().values()
+                norm = grad_values.norm(2)  # L2ノルムを計算
+                if norm > max_norm:
+                    scale = max_norm / (norm + 1e-6)
+                    grad_values.mul_(scale)  # 非ゼロ値をスケール
+            elif param.grad is not None:
+                # 通常の密テンソルの処理
+                torch.nn.utils.clip_grad_norm_([param], max_norm)
 
 
     #@profile
@@ -74,96 +91,89 @@ class PPO:
             G_r[r] = gamma * G_r[r + 1] + reward_memory[r].detach().clone()
 
 
-        loss = 0
-        for i in range(storycount):
-            old_policy = prob_sparse_memory[i].detach().clone() 
-            new_policy,b,c,d,e= self.new_actor.train(feat_sparse_memory[i], edge_sparse_memory[i], i, action_dim, feat_size)
 
-            # インデックスの結合と重複除去
-            combined_indices = torch.cat([old_policy.indices(), new_policy.indices()], dim=1)
-            unique_indices, inverse_indices = torch.unique(combined_indices.t(), dim=0, return_inverse=True)
-            unique_indices = unique_indices.t()
+        for _ in range(1):
+            loss = 0
+            for i in range(storycount):
+                old_policy = prob_sparse_memory[i].detach().clone() 
+                new_policy = self.new_actor.train(feat_sparse_memory[i], edge_sparse_memory[i], i, action_dim, feat_size)
 
-            # 値の計算とクリッピング
-            old_values = torch.zeros(unique_indices.size(1), device=old_policy.device)
-            new_values = torch.zeros(unique_indices.size(1), device=new_policy.device)
+                # インデックスの結合と重複除去
+                combined_indices = torch.cat([old_policy.indices(), new_policy.indices()], dim=1)
+                unique_indices, inverse_indices = torch.unique(combined_indices.t(), dim=0, return_inverse=True)
+                unique_indices = unique_indices.t()
 
-            old_mask = inverse_indices[:old_policy.values().size(0)]
-            new_mask = inverse_indices[old_policy.values().size(0):]
+                # 値の計算とクリッピング
+                old_values = torch.zeros(unique_indices.size(1), device=old_policy.device)
+                new_values = torch.zeros(unique_indices.size(1), device=new_policy.device)
 
-            # クリッピングを適用
-            old_log_values = torch.log(torch.clamp(old_policy.values(), min=1e-10, max=1.0))
-            new_log_values = torch.log(torch.clamp(new_policy.values(), min=1e-10, max=1.0))
+                old_mask = inverse_indices[:old_policy.values().size(0)]
+                new_mask = inverse_indices[old_policy.values().size(0):]
 
-            old_values[old_mask] = old_log_values
-            new_values[new_mask] = new_log_values
+                # クリッピングを適用
+                old_log_values = torch.log(torch.clamp(old_policy.values(), min=1e-10, max=1.0))
+                new_log_values = torch.log(torch.clamp(new_policy.values(), min=1e-10, max=1.0))
 
-            # ratio計算とクリッピング
-            ratio = torch.exp(torch.clamp(new_values - old_values, min=-5.0, max=5.0))
-            ratio = torch.clamp(ratio, min=1-cliprange, max=1+cliprange).detach().clone()
+                old_values[old_mask] = old_log_values
+                new_values[new_mask] = new_log_values
 
-            # スパーステンソルの作成
-            ratio_tensor = torch.sparse_coo_tensor(
-                unique_indices,
-                ratio,
-                old_policy.size()
-            ).coalesce()
+                # ratio計算とクリッピング
+                ratio = torch.exp(torch.clamp(new_values - old_values, min=-5.0, max=5.0))
+                ratio = torch.clamp(ratio, min=1-cliprange, max=1+cliprange).detach().clone()
 
-            # 報酬の計算
-            G = G_r[i]
-            reward = ratio_tensor.multiply(G)
+                # スパーステンソルの作成
+                ratio_tensor = torch.sparse_coo_tensor(
+                    unique_indices,
+                    ratio,
+                    old_policy.size()
+                ).coalesce()
 
-            # 損失の計算
-            filtered_policy = new_policy.coalesce()
-            policy_values = torch.log(torch.clamp(filtered_policy.values().requires_grad_(True), min=1e-10))
-            policy_tensor = torch.sparse_coo_tensor(
-                filtered_policy.indices(),
-                policy_values,
-                filtered_policy.size(),
-                requires_grad=True
-            )
-            
-            #loss -= torch.sparse.sum(policy_tensor * reward)
-            loss -= torch.sum(policy_tensor)
+                # 報酬の計算
+                G = G_r[i]
+                reward = ratio_tensor.multiply(G)
 
-        # 勾配の計算と適用
+                # 損失の計算
+                filtered_policy = new_policy.coalesce()
+                policy_values = torch.log(torch.clamp(filtered_policy.values(), min=1e-10))
+                policy_tensor = torch.sparse_coo_tensor(
+                    filtered_policy.indices(),
+                    policy_values,
+                    filtered_policy.size(),
+                )         
+                #loss -= torch.sparse.sum(policy_tensor * reward)
+                loss -= torch.sparse.sum(policy_tensor * reward)
 
-        print("Loss requires grad:", loss.requires_grad)
-    
-        self.new_actor_optimizer.zero_grad()
 
-        print("new_policy.requires_grad",new_policy.requires_grad)
-        print("policy_tensor.requires_grad",policy_tensor.requires_grad)
-
-        print("b",b.grad_fn,b.grad,b.is_leaf)
-        print("c",c.grad_fn,c.grad,c.is_leaf)
-        print("d",d.grad_fn,d.grad,d.is_leaf)
-        print("e",e.grad_fn,e.grad,e.is_leaf)
+            # 勾配の計算と適用
+            self.new_actor_optimizer.zero_grad()
    
-  
-       
-        # 計算
-        try:
+            
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.new_actor.parameters(), max_norm=1.0)
-            
-            
-        except RuntimeError as e:
-            print("エラー:", e)
+            #torch.nn.utils.clip_grad_norm_(self.new_actor.parameters(), max_norm=1.0)
+            # パラメータのリストを取得
+            parameters = list(self.new_actor.parameters())
 
-        # 勾配をチェック
-        for name, param in self.new_actor.named_parameters():
-            if param.grad is not None:
-                print(f"Gradient for {name}:", param.grad,param.grad_fn,param.is_leaf)
-            else:
-                print(f"No gradient for {name}",param.grad,param.grad_fn,param.is_leaf)
+            # カスタム勾配クリッピングを適用
+            self.sparse_clip_grad_norm_(parameters, max_norm=1.0)
 
-        self.new_actor_optimizer.step()
+                
+            #except RuntimeError as e:
+             #   print("エラー:", e)
+
+            # 勾配をチェック
+            for name, param in self.new_actor.named_parameters():
+                if param.grad is not None:
+                    print(f"Gradient for {name}:", param.grad,param.grad_fn,param.is_leaf)
+                else:
+                    print(f"No gradient for {name}",param.grad,param.grad_fn,param.is_leaf)
+
+            self.new_actor_optimizer.step()
+
 
         return self.new_actor.T.clone().detach(), self.new_actor.e.clone().detach(), \
             self.new_actor.r.clone().detach(), self.new_actor.W.clone().detach()
     
-    def update_reward(self,obs,T,e,r,w,mixture_ration,temperature,action_dim,feat_size,edge,feat):
+    def update_reward(self,obs,T,e,r,w,mixture_ration,temperature,action_dim,feat_size,edge,feat, scaler):
 
         _, _ = obs.reset(edge, feat,mixture_ration)
         
@@ -173,11 +183,13 @@ class PPO:
             edge,two_hop_neighbar,feature = obs.state()
             edge_probs,edge_action,feat_action = self.update_actor.get_action(feature,edge,two_hop_neighbar,time,action_dim,feat_size)
             if time == 0:
-                alpha_all,beta_all,gamma_all = obs.update_reward(feat_action.coalesce(),edge_action.coalesce(),time)
+                alpha_all,beta_all,gamma_all = obs.update_reward(feat_action.coalesce(),edge_action.coalesce(),time,scaler)
             else:
-                alpha_all,beta_all,gamma_all = obs.update_reward(feat_action.coalesce(),edge_action.coalesce(),time,alpha_all,beta_all,gamma_all)
+                alpha_all,beta_all,gamma_all = obs.update_reward(feat_action.coalesce(),edge_action.coalesce(),time,scaler,alpha_all,beta_all,gamma_all)
 
-        return obs.alpha,obs.beta,obs.gamma
+            
+
+        return alpha_all,beta_all,gamma_all
         
     
 #@profile
@@ -189,11 +201,23 @@ def init_mixing_param(K):
 def calc_gaussian_prob(x, mean, sigma):
     """多次元ガウス分布の確率を計算"""
     d = x - mean
-    sigma += np.eye(sigma.shape[0]) * 1e-5  # 数値安定性
+    sigma += np.eye(sigma.shape[0]) * 1e-5  # 数値安定性を確保
     det = np.linalg.det(sigma)
-    inv_sigma = np.linalg.inv(sigma)
-    exp_term = -0.5 * (d @ inv_sigma @ d.T).item()
-    return np.exp(exp_term) / np.sqrt((2 * np.pi) ** sigma.shape[0] * det)
+
+    # 行列の特異性チェック
+    if det <= 1e-10:  # 行列式がゼロに近い場合、修正
+        sigma += np.eye(sigma.shape[0]) * 1e-3
+        det = np.linalg.det(sigma)
+
+    inv_sigma = np.linalg.inv(sigma).astype("float32")
+
+    # ガウス分布の確率をログスケールで計算
+    exp_term = -0.5 * np.dot(d.T, np.dot(inv_sigma, d))
+    log_prob = exp_term - 0.5 * (np.log(det) + sigma.shape[0] * np.log(2 * np.pi))
+
+
+    #return np.exp(exp_term) / np.sqrt((2 * np.pi) ** sigma.shape[0] * det)
+    return np.exp(log_prob)
 
 
 def calc_likelihood(X, means, sigmas, pi, K):
@@ -209,8 +233,9 @@ def e_step(N, K, X, means, sigmas,pi):
     # E-Step
     gamma = np.zeros((N, K))
     for n, x in enumerate(X):
-        denominator = sum(pi[k] * calc_gaussian_prob(x, means[k], sigmas[k]) for k in range(K))
-        gamma[n] = [pi[k] * calc_gaussian_prob(x, means[k], sigmas[k]) / denominator for k in range(K)]
+        denominator = sum(pi[0][n][k] * calc_gaussian_prob(x, means[k], sigmas[k]) for k in range(K))
+
+        gamma[n] = [pi[0][n][k] * calc_gaussian_prob(x, means[k], sigmas[k]) / denominator for k in range(K)]
 
     return gamma
 
@@ -229,20 +254,27 @@ def m_step(X,gamma,K):
 
 
 
-def em_algorithm(alpha,beta,gamma,means,sigmas,mixture_ration):
+def em_algorithm(alpha,beta,gamma,means,sigmas,mixture_ration,scaler):
     """EMアルゴリズム"""
-    data = pd.DataFrame({"alpha": alpha, "beta": beta, "gamma": gamma})
-    norm_data = StandardScaler().fit_transform(data)
-    norm_df = pd.DataFrame(norm_data, columns=["alpha", "beta", "gamma"])
+    N = len(mixture_ration[0])
+    data = pd.DataFrame({
+        "alpha": torch.squeeze(alpha).detach().numpy(), 
+        "beta": torch.squeeze(beta).detach().numpy(),
+        "gamma": torch.squeeze(gamma).detach().numpy()
+         })
 
-    K = len(alpha)
+    #norm_data = StandardScaler().fit_transform(data)
+    #norm_df = pd.DataFrame(norm_data, columns=["alpha", "beta", "gamma"])
+    norm_data = scaler.transform(data)
+    norm_df = pd.DataFrame(norm_data, columns=["alpha", "beta", "gamma"])
+    norm_tensor = torch.tensor(norm_df.values)
+    K = len(mixture_ration)
     pi = mixture_ration
     #M-step
-    #pi, means ,sigmas = m_step(X,pi,K)
+    #pi, means, sigmas = m_step(X,pi,K)
 
     #E-step
-
-    rik = e_step(N, K, X, means, sigmas,pi)
+    rik = e_step(N, K, norm_tensor, means, sigmas,pi)
 
     return rik
 
@@ -256,7 +288,7 @@ def show():
 def execute_data(persona_num,data_name,data_type):
     ##デバッグ用
     torch.autograd.set_detect_anomaly(True)
-    #alpha,betaの読み込み
+    #alpha, betaの読み込み
     if data_name == "NIPS":
         action_dim = 32
 
@@ -312,17 +344,20 @@ def execute_data(persona_num,data_name,data_type):
     sigmas = sigmas.astype("float32")
     sigmas = torch.from_numpy(sigmas).to(device)
 
-    #重み(固定値)
+    path = path_n+"persona={}/scaler.pkl".format(int(persona_num))
+    scaler = joblib.load(path)
+
     alpha = means[:,0]
     beta = means[:,1]
     gamma = means[:,2]
     
+
+    #重み(固定値)
+
     print("load",load_data.adj,load_data.feature)
     print("means",means)
     print("sigmas",sigmas)
-    print("alpha",alpha)
-    print("beta",beta)
-    print("gamma",gamma)
+
 
     #パラメータ
     if data_name == "NIPS":
@@ -363,27 +398,39 @@ def execute_data(persona_num,data_name,data_type):
     while flag and ln_sub <= 1:
         
         print("----------episode:{}----------".format(episode))
-        print("pe",persona_ration)
+
+    
+        print("pe",persona_ration[:10])
 
         # E-step
         #mixture_ratio:混合比率
 
         if episode == 0:
             mixture_ratio = persona_ration
+
        
         else:
-            new_mixture_ratio = em_algorithm(alpha,beta,gamma,means,sigmas,mixture_ratio)
+            new_mixture_ratio = em_algorithm(alpha,beta,gamma,means,sigmas,mixture_ratio,scaler)
+         
      
                       
             # スムージングファクター
             if episode <= 3:
                 clip_ration = 0.2
-                updated_prob_tensor = (1 - clip_ration) * mixture_ratio + clip_ration * new_mixture_ratio
-                mixture_ratio = updated_prob_tensor
+                updated_prob_tensor = (1 - clip_ration) * mixture_ratio + clip_ration * torch.from_numpy(new_mixture_ratio.astype("float32"))
+                mixture_ratio = updated_prob_tensor.float()
                 del updated_prob_tensor
                 gc.collect()
             else:
-                mixture_ratio = new_mixture_ratio
+                mixture_ratio = torch.from_numpy(new_mixture_ratio.astype("float32"))
+                ratio_size = mixture_ratio.size()
+                mixture_ratio = mixture_ratio.expand(5,ratio_size[0],ratio_size[1])
+ 
+        
+            alpha = means[:,0]
+            beta = means[:,1]
+            gamma = means[:,2]
+            
 
 
         #personaはじめは均等
@@ -398,9 +445,7 @@ def execute_data(persona_num,data_name,data_type):
             gamma=gamma,
             persona=mixture_ratio
         )
-        print("エッジ",edge_sparse[LEARNED_TIME].size())
-        print("属性値",feat_sparse[LEARNED_TIME].size())
-        print("ペルソナ",mixture_ratio.size())
+
 
         
         agents = PPO(obs,agent_num, input_size, action_dim,lr, mu,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
@@ -411,9 +456,7 @@ def execute_data(persona_num,data_name,data_type):
         reward_memory = []
         edge_sparse_memory.append(edge_sparse[LEARNED_TIME].clone())
         feat_sparse_memory.append(feat_sparse[LEARNED_TIME].clone())
-        print("エッジ",edge_sparse[LEARNED_TIME].size())
-        print("属性値",feat_sparse[LEARNED_TIME].size())
-        print("ペルソナ",mixture_ratio.size())
+
 
         #時間をすすめる
         for time in range(story_count):
@@ -451,12 +494,11 @@ def execute_data(persona_num,data_name,data_type):
       
 
         episodes_reward.append(episode_reward)
-        print(reward_memory)
 
         T,e,r,w= agents.train(mu,action_dim,feat_size,prob_sparse_memory,edge_sparse_memory,feat_sparse_memory,reward_memory)
         print("Updated Policy")
 
-        alpha,beta,gamma = agents.update_reward(obs,T,e,r,w,mixture_ratio,temperature,action_dim,feat_size,edge_sparse[LEARNED_TIME],feat_sparse[LEARNED_TIME])
+        alpha,beta,gamma = agents.update_reward(obs,T,e,r,w,mixture_ratio,temperature,action_dim,feat_size,edge_sparse[LEARNED_TIME],feat_sparse[LEARNED_TIME],scaler)
 
         print("Updated Reward")
         
@@ -496,18 +538,14 @@ def execute_data(persona_num,data_name,data_type):
     print("パラメータ",T,e,r,w)
 
             
-    new_mixture_ratio = e_step(
-                agent_num=agent_num,
-                edge = edge_sparse[LEARNED_TIME],
-                feat = feat_sparse[LEARNED_TIME],
-                T=T,
-                e=e,
-                r=r,
-                w=w,
-                persona=persona_ration,
-                step = story_count,
-                temperature=temperature,
-                sparse_size = feat_size
+    new_mixture_ratio = em_algorithm(
+                alpha,
+                beta,
+                gamma,
+                means,
+                sigmas,
+                mixture_ratio,
+                scaler
             )
 
                       
@@ -517,7 +555,9 @@ def execute_data(persona_num,data_name,data_type):
     # a = 0.1
     #print("nm",new_mixture_ratio)
     #updated_prob_tensor = (1 - a) * mixture_ratio + a * new_mixture_ratio
-    mixture_ratio = new_mixture_ratio
+    mixture_ratio = torch.from_numpy(new_mixture_ratio.astype("float32"))
+    ratio_size = mixture_ratio.size()
+    mixture_ratio = mixture_ratio.expand(5,ratio_size[0],ratio_size[1])
     agents = PPO(obs,agent_num, input_size, action_dim,lr, gamma,T,e,r,w,mixture_ratio,temperature,story_count,data_name)
 
 
@@ -532,7 +572,7 @@ def execute_data(persona_num,data_name,data_type):
         for test_time in range(TOTAL_TIME - GENERATE_TIME):
 
             edges, two_hop_neighbar,feature = obs.state()
-            edge_action,edge_prob ,feat_prob ,feat_action = agents.actor.get_action(feature,edges,two_hop_neighbar,test_time,action_dim,feat_size)
+            edge_action,edge_prob ,feat_prob ,feat_action = agents.actor.pred(feature,edges,two_hop_neighbar,test_time,action_dim,feat_size)
             reward = obs.step(feat_action,edge_action,test_time)
             
 
@@ -661,6 +701,6 @@ if __name__ == "__main__":
     #[4,8,12,16]
     s = time.time()
     for i in [5]:
-        execute_data(i,"DBLP","complete")
+        execute_data(i,"Twitter","complete")
     e = time.time()
     print("time:",s-e)
