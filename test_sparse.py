@@ -381,7 +381,7 @@ def execute_data(persona_num,data_name,data_type):
   
     else:
         mu = 0.01
-        lr = 0.00001
+        lr = 0.01
         temperature = 0.01
         T = torch.tensor([1.50 for _ in range(persona_num)], dtype=torch.float32)
         e = torch.tensor([1.00 for _ in range(persona_num)], dtype=torch.float32)

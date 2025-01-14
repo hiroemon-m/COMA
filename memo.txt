@@ -12,3 +12,11 @@ pred feat sum 156447.16
 feat action sum tensor(105708.1797)
 target edge sum 183649.0
 attr auc, t=0: 0.5806354397952356
+
+        mu = 0.01
+        lr = 0.00001
+        temperature = 0.01
+        T = torch.tensor([1.50 for _ in range(persona_num)], dtype=torch.float32)
+        e = torch.tensor([1.00 for _ in range(persona_num)], dtype=torch.float32)
+        r = torch.tensor([0.80 for _ in range(persona_num)], dtype=torch.float32)
+        w = torch.tensor([0.80 for _ in range(persona_num)], dtype=torch.float32)
